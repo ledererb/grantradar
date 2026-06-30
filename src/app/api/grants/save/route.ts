@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
+import { generalRateLimit, applyRateLimit } from '@/lib/rate-limit'
 
 /**
  * POST /api/grants/save — Toggle save/unsave a grant
  */
 export async function POST(request: NextRequest) {
+  const limited = await applyRateLimit(generalRateLimit, request)
+  if (limited) return limited
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -45,7 +49,10 @@ export async function POST(request: NextRequest) {
 /**
  * GET /api/grants/save — Get all saved grant IDs for current user
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const limited = await applyRateLimit(generalRateLimit, request)
+  if (limited) return limited
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 

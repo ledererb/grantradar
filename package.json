@@ -30,6 +30,8 @@
     "@types/nodemailer": "^8.0.0",
     "@types/pg": "^8.20.0",
     "@upstash/qstash": "^2.10.1",
+    "@upstash/ratelimit": "^2.0.8",
+    "@vercel/kv": "^3.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

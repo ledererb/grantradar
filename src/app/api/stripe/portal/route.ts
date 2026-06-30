@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
+import { generalRateLimit, applyRateLimit } from '@/lib/rate-limit'
 
 /**
  * POST /api/stripe/portal — Redirect to Stripe Customer Portal
  */
-export async function POST() {
+export async function POST(request: Request) {
+  const limited = await applyRateLimit(generalRateLimit, request)
+  if (limited) return limited
+
   try {
     const supabase = await createClient()
     const { data: { user: authUser } } = await supabase.auth.getUser()

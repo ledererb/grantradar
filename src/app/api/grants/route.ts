@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, pgPool } from '@/lib/db'
 import { generateEmbedding } from '@/lib/openai'
+import { searchRateLimit, applyRateLimit } from '@/lib/rate-limit'
 import type { GrantStatus, FundingType, CompanySize } from '@prisma/client'
 
 /**
  * GET /api/grants — Public grant listing with filters + search
  */
 export async function GET(request: NextRequest) {
+  const limited = await applyRateLimit(searchRateLimit, request)
+  if (limited) return limited
+
   const { searchParams } = new URL(request.url)
 
   const page = parseInt(searchParams.get('page') || '1')
