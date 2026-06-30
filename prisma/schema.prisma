@@ -87,6 +87,9 @@ model Grant {
   documentUrls        String[]
   sourceUrl           String
 
+  // AI enrichment retry tracking (auto-enrich.ts)
+  enrichmentAttempts  Int       @default(0)
+
   // Semantic search embedding
   embedding           Unsupported("vector(1536)")?
 
@@ -104,6 +107,10 @@ model Grant {
   @@index([status])
   @@index([program])
   @@index([fundingType])
+  @@index([deadline])
+  @@index([sourceId])
+  @@index([firstSeenAt])
+  @@index([lastScrapedAt])
 }
 
 // ─── USERS & AUTH ────────────────────────────────────

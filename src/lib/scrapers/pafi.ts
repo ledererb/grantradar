@@ -110,6 +110,7 @@ ${doc.markdown.slice(0, 20000)}`,
           description: grant.description || '',
           documentUrls: [],
           sourceUrl,
+          externalId: grant.code || sourceUrl,
         })
         grantsCreated++
         console.log(`[Pafi] ✓ ${grant.code || grant.title}`)

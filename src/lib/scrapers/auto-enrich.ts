@@ -1,15 +1,21 @@
 import { prisma, pgPool } from '@/lib/db'
 import { generateEmbedding, enrichGrant } from '@/lib/openai'
 
+/** Maximum AI enrichment attempts per grant before giving up. */
+const MAX_ENRICHMENT_ATTEMPTS = 3
+
 /**
  * Auto-enrich any grants that haven't been AI-processed yet.
  * Call this at the end of every scrape cycle.
- * Only processes OPEN/FORTHCOMING grants with no AI summary.
+ * Only processes OPEN/FORTHCOMING grants with no AI summary AND
+ * fewer than MAX_ENRICHMENT_ATTEMPTS failed attempts. This prevents
+ * the cron from re-trying the same broken grants forever.
  */
 export async function autoEnrich(limit = 20): Promise<{ processed: number; enriched: number }> {
   const unenrichedGrants = await prisma.grant.findMany({
     where: {
       aiSummaryHu: null,
+      enrichmentAttempts: { lt: MAX_ENRICHMENT_ATTEMPTS },
       status: { in: ['OPEN', 'FORTHCOMING'] },
     },
     take: limit,
@@ -24,6 +30,7 @@ export async function autoEnrich(limit = 20): Promise<{ processed: number; enric
   let enriched = 0
 
   for (const grant of unenrichedGrants) {
+    const nextAttempt = grant.enrichmentAttempts + 1
     try {
       const aiData = await enrichGrant({
         titleHu: grant.titleHu,
@@ -51,6 +58,7 @@ export async function autoEnrich(limit = 20): Promise<{ processed: number; enric
           aiKeyPoints: aiData.aiKeyPoints,
           aiDifficultyScore: aiData.aiDifficultyScore,
           aiSectors: aiData.aiSectors,
+          enrichmentAttempts: nextAttempt,
         },
       })
 
@@ -63,7 +71,28 @@ export async function autoEnrich(limit = 20): Promise<{ processed: number; enric
       console.log(`[AutoEnrich] ✓ ${grant.code || grant.titleHu}`)
       await new Promise(resolve => setTimeout(resolve, 200))
     } catch (err) {
-      console.error(`[AutoEnrich] Error on ${grant.id}:`, err)
+      // Persist the incremented attempt counter so we eventually give up
+      // on grants that consistently fail enrichment.
+      try {
+        await prisma.grant.update({
+          where: { id: grant.id },
+          data: { enrichmentAttempts: nextAttempt },
+        })
+      } catch {
+        // ignore secondary failure
+      }
+
+      if (nextAttempt >= MAX_ENRICHMENT_ATTEMPTS) {
+        console.warn(
+          `[enrich] Grant ${grant.id} failed enrichment, attempt ${nextAttempt}/${MAX_ENRICHMENT_ATTEMPTS} — giving up`,
+          err instanceof Error ? err.message : err,
+        )
+      } else {
+        console.warn(
+          `[enrich] Grant ${grant.id} failed enrichment, attempt ${nextAttempt}/${MAX_ENRICHMENT_ATTEMPTS}`,
+          err instanceof Error ? err.message : err,
+        )
+      }
     }
   }
 

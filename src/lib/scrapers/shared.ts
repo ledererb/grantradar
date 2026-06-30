@@ -18,6 +18,12 @@ interface RawGrantData {
   description?: string
   documentUrls?: string[]
   sourceUrl: string
+  /**
+   * Explicit stable identifier for this grant on the source site.
+   * Used as the primary deduplication key together with `sourceId`.
+   * When omitted, a normalized key is derived from `sourceUrl`.
+   */
+  externalId?: string
 }
 
 /**
@@ -74,11 +80,47 @@ function parseDate(raw?: string | null): Date | null {
 }
 
 /**
+ * Derive a stable, normalized dedup key from a source URL.
+ *
+ * Grant portals frequently change tracking params, fragments and trailing
+ * slashes — without normalization, the same listing becomes two rows. We
+ * strip query strings, fragments and trailing slashes so the URL alone is a
+ * reliable identifier when the scraper has no native code/id.
+ */
+function normalizeUrlKey(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl)
+    u.hash = ''
+    u.search = ''
+    let path = u.pathname.replace(/\/+$/, '')
+    if (!path) path = '/'
+    return `${u.host}${path}`
+  } catch {
+    // Not a valid absolute URL — best-effort cleanup of the raw string.
+    return rawUrl.split('?')[0].split('#')[0].replace(/\/+$/, '')
+  }
+}
+
+/**
+ * Resolve the deduplication identifier for a grant.
+ *
+ * Priority:
+ *   1. Explicit `externalId` passed by the scraper (most reliable)
+ *   2. Official `code` (stable on most Hungarian portals)
+ *   3. Normalized sourceUrl (fallback when nothing else is available)
+ */
+function resolveExternalId(sourceId: string, data: RawGrantData): string {
+  if (data.externalId && data.externalId.trim()) return data.externalId.trim()
+  if (data.code && data.code.trim()) return data.code.trim()
+  return normalizeUrlKey(data.sourceUrl)
+}
+
+/**
  * Upsert a grant into the database. 
  * Uses sourceId + externalId for deduplication.
  */
 export async function upsertGrant(sourceId: string, data: RawGrantData) {
-  const externalId = data.code || data.sourceUrl
+  const externalId = resolveExternalId(sourceId, data)
 
   const grantData = {
     titleHu: data.title || null,

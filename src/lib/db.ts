@@ -13,7 +13,11 @@ function getPool() {
   if (!globalForDb.pool) {
     globalForDb.pool = new pg.Pool({
       connectionString,
-      max: 5, // Limit connections to avoid pool exhaustion
+      // 4 parallel scrapers + API requests + cron enrichment can exhaust a
+      // pool of 5 quickly. Raise to 10. Note: when using the Supabase
+      // pooler (port 6543 / PgBouncer) the effective server-side limit is
+      // higher still, so this is a safe client-side ceiling.
+      max: 10,
     })
   }
   return globalForDb.pool
