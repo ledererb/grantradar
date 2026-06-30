@@ -23,12 +23,16 @@ export async function POST() {
       return NextResponse.json({ error: 'No billing account found' }, { status: 400 })
     }
 
-    const session = await stripe.billingPortal.sessions.create({
+    const portalSession = await stripe.billingPortal.sessions.create({
       customer: user.stripeCustomerId,
       return_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
     })
 
-    return NextResponse.json({ url: session.url })
+    if (!portalSession.url) {
+      return NextResponse.json({ error: 'No portal URL returned' }, { status: 502 })
+    }
+
+    return NextResponse.redirect(portalSession.url)
   } catch (error) {
     console.error('[Stripe Portal] Error:', error)
     return NextResponse.json(
