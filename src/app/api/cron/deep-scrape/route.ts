@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deepScrapeGrants } from '@/lib/scrapers/deep-scrape'
+import { runWithMonitoring } from '@/lib/scrapers/monitor'
 
 export const maxDuration = 300
 
@@ -32,8 +33,8 @@ export async function POST(request: NextRequest) {
       console.log(`[DeepScrape] Reset ${reset.count} failed scrapes`)
     }
 
-    const result = await deepScrapeGrants(Math.min(limit, 20))
-    return NextResponse.json(result)
+    const { result, run } = await runWithMonitoring('deep-scrape', () => deepScrapeGrants(Math.min(limit, 20)))
+    return NextResponse.json(result ?? { success: false, error: run.errors[0] || 'Deep scrape failed', monitoring: run })
   } catch (error) {
     console.error('[CRON] deep-scrape error:', error)
     return NextResponse.json(

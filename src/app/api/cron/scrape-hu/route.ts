@@ -11,6 +11,7 @@ import { scrapeKap } from '@/lib/scrapers/kap'
 import { scrapeMagyarFalu } from '@/lib/scrapers/magyarfalu'
 import { scrapeNffku } from '@/lib/scrapers/nffku'
 import { autoEnrich, autoArchiveExpired } from '@/lib/scrapers/auto-enrich'
+import { runWithMonitoring } from '@/lib/scrapers/monitor'
 
 export const maxDuration = 300
 
@@ -65,11 +66,8 @@ function getTierForToday(): Record<string, ScraperFn> {
 async function runScrapers(scrapers: Record<string, ScraperFn>) {
   const results: Record<string, unknown> = {}
   for (const [name, scraper] of Object.entries(scrapers)) {
-    try {
-      results[name] = await scraper()
-    } catch (e) {
-      results[name] = { success: false, error: e instanceof Error ? e.message : 'Unknown' }
-    }
+    const { result } = await runWithMonitoring(name, scraper)
+    results[name] = result ?? { success: false, error: 'Scraper failed' }
     await new Promise(resolve => setTimeout(resolve, 1500))
   }
   return results
@@ -92,9 +90,9 @@ export async function POST(request: NextRequest) {
     if (!fn) {
       return NextResponse.json({ error: `Unknown: ${slug}`, available: Object.keys(ALL) }, { status: 400 })
     }
-    const result = await fn()
+    const { result, run } = await runWithMonitoring(slug, fn)
     const enrichResult = await autoEnrich(10)
-    return NextResponse.json({ ...result, enrichment: enrichResult })
+    return NextResponse.json({ ...(result ?? { success: false, error: 'Scraper failed' }), monitoring: run, enrichment: enrichResult })
   }
 
   if (tier === 'all') scrapers = ALL
