@@ -2,16 +2,27 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 
 export async function DELETE(request: NextRequest) {
+  const secret = process.env.ADMIN_CLEANUP_SECRET
+  if (!secret) {
+    return NextResponse.json({ error: 'ADMIN_CLEANUP_SECRET is not configured' }, { status: 500 })
+  }
+
   const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const body = await request.json()
-  const ids: string[] = body.ids || []
+
+  // Body must be an array of grant IDs (strings)
+  if (!Array.isArray(body)) {
+    return NextResponse.json({ error: 'Request body must be an array of grant IDs' }, { status: 400 })
+  }
+
+  const ids: string[] = body.filter((id): id is string => typeof id === 'string' && id.length > 0)
 
   if (!ids.length) {
-    return NextResponse.json({ error: 'No IDs provided' }, { status: 400 })
+    return NextResponse.json({ error: 'No valid IDs provided' }, { status: 400 })
   }
 
   const result = await prisma.grant.deleteMany({
