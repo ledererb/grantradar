@@ -4,6 +4,7 @@ import { generateEmbedding } from '@/lib/openai'
 import { searchRateLimit, applyRateLimit } from '@/lib/rate-limit'
 import { getUserPlan, planLimits } from '@/lib/plan-limits'
 import { createClient } from '@/lib/supabase/server'
+import { searchGrantsSchema } from '@/lib/validations'
 import type { GrantStatus, FundingType, CompanySize } from '@prisma/client'
 
 /**
@@ -15,8 +16,28 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
 
-  const page = parseInt(searchParams.get('page') || '1')
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
+  // Validate the search query text + pagination. The browse case (no `q`/`semantic`)
+  // only validates pagination.
+  const queryText = searchParams.get('semantic') || searchParams.get('q') || ''
+  if (queryText) {
+    const searchValidation = searchGrantsSchema.safeParse({
+      query: queryText,
+      page: searchParams.get('page') || undefined,
+      pageSize: searchParams.get('limit') || undefined,
+    })
+    if (!searchValidation.success) {
+      return NextResponse.json(
+        { error: 'Invalid request', details: searchValidation.error.flatten() },
+        { status: 400 },
+      )
+    }
+  }
+
+  // Clamp pagination (1..50) for the browse case and as a safety net.
+  const parsedPage = Number.parseInt(searchParams.get('page') || '1', 10)
+  const parsedLimit = Number.parseInt(searchParams.get('limit') || '20', 10)
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1
+  const limit = Math.min(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 20, 50)
   const skip = (page - 1) * limit
 
   // Filters

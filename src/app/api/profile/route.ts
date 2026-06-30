@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
+import { updateProfileSchema } from '@/lib/validations'
 
 export async function GET() {
   const supabase = await createClient()
@@ -31,7 +32,22 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 })
   }
 
-  const body = await request.json()
+  // Validate known fields (email/name). Pass through company-specific fields
+  // (companyName, taxNumber, companySizePref, sectorPrefs) which this endpoint
+  // also persists.
+  const parsed = updateProfileSchema.passthrough().safeParse(await request.json())
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid request', details: parsed.error.flatten() },
+      { status: 400 },
+    )
+  }
+  const body = parsed.data as {
+    companyName?: string
+    taxNumber?: string
+    companySizePref?: never
+    sectorPrefs?: string[]
+  }
 
   const profile = await prisma.userProfile.upsert({
     where: { userId: dbUser.id },

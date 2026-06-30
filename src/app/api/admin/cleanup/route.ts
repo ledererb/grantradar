@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { deleteGrantsSchema } from '@/lib/validations'
 
 export async function DELETE(request: NextRequest) {
   const secret = process.env.ADMIN_CLEANUP_SECRET
@@ -12,18 +13,15 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await request.json()
-
-  // Body must be an array of grant IDs (strings)
-  if (!Array.isArray(body)) {
-    return NextResponse.json({ error: 'Request body must be an array of grant IDs' }, { status: 400 })
+  const parsed = deleteGrantsSchema.safeParse(await request.json())
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid request', details: parsed.error.flatten() },
+      { status: 400 },
+    )
   }
 
-  const ids: string[] = body.filter((id): id is string => typeof id === 'string' && id.length > 0)
-
-  if (!ids.length) {
-    return NextResponse.json({ error: 'No valid IDs provided' }, { status: 400 })
-  }
+  const ids = parsed.data.ids
 
   const result = await prisma.grant.deleteMany({
     where: { id: { in: ids } },

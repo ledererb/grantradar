@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
 import { generalRateLimit, applyRateLimit } from '@/lib/rate-limit'
 import { getUserPlan, planLimits } from '@/lib/plan-limits'
+import { saveGrantSchema } from '@/lib/validations'
 
 /**
  * POST /api/grants/save — Toggle save/unsave a grant
@@ -18,10 +19,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { grantId } = await request.json()
-  if (!grantId) {
-    return NextResponse.json({ error: 'grantId required' }, { status: 400 })
+  const parsed = saveGrantSchema.safeParse(await request.json())
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: 'Invalid request', details: parsed.error.flatten() },
+      { status: 400 },
+    )
   }
+  const { grantId } = parsed.data
 
   // Find our user
   const dbUser = await prisma.user.findUnique({ where: { supabaseId: user.id } })
