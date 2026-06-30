@@ -1,0 +1,234 @@
+// GrantRadar — Prisma Schema
+// Connects to Supabase PostgreSQL
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+// ─── GRANT SOURCES ───────────────────────────────────
+
+model Source {
+  id           String      @id @default(cuid())
+  name         String
+  slug         String      @unique
+  url          String
+  country      Country
+  crawlMethod  CrawlMethod
+  cronSchedule String      @default("0 3 * * *") // default: daily 3am
+  isActive     Boolean     @default(true)
+  lastRunAt    DateTime?
+  lastStatus   String?
+  errorMessage String?
+  grants       Grant[]
+  crawlLogs    CrawlLog[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model CrawlLog {
+  id            String   @id @default(cuid())
+  sourceId      String
+  source        Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  status        String   // SUCCESS | PARTIAL | FAILED
+  grantsFound   Int      @default(0)
+  grantsCreated Int      @default(0)
+  grantsUpdated Int      @default(0)
+  durationMs    Int?
+  errorMessage  String?
+  startedAt     DateTime @default(now())
+  finishedAt    DateTime?
+
+  @@index([sourceId, startedAt])
+}
+
+// ─── GRANTS ──────────────────────────────────────────
+
+model Grant {
+  id                  String      @id @default(cuid())
+  externalId          String?
+  sourceId            String
+  source              Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  titleHu             String?
+  titleEn             String?
+  code                String?     // e.g. "GINOP-Plusz-1.2.3-25"
+  program             String?     // e.g. "GINOP-Plusz"
+
+  status              GrantStatus @default(OPEN)
+  fundingType         FundingType @default(GRANT)
+
+  deadline            DateTime?
+  openDate            DateTime?
+
+  minAmountHuf        BigInt?
+  maxAmountHuf        BigInt?
+  minAmountEur        Int?
+  maxAmountEur        Int?
+  supportIntensityPct Float?
+
+  eligibleSizes       CompanySize[]
+  eligibleSectors     String[]
+  eligibleRegions     String[]
+
+  descriptionHu       String?
+  descriptionEn       String?
+  eligibilityHu       String?     // Deep: full eligibility criteria from detail page
+  applicationStepsHu  String?     // Deep: application process steps
+  aiSummaryHu         String?
+  aiKeyPoints         String[]    // AI-extracted bullet points
+  aiDifficultyScore   Int?        // 1-5
+  aiSectors           String[]    // AI-inferred sectors
+
+  documentUrls        String[]
+  sourceUrl           String
+
+  // Semantic search embedding
+  embedding           Unsupported("vector(1536)")?
+
+  firstSeenAt         DateTime    @default(now())
+  lastScrapedAt       DateTime    @default(now())
+  detailScrapedAt     DateTime?   // When the detail page was deep-scraped
+  reopenedAt          DateTime?   // Set when status changes CLOSED → OPEN
+  updatedAt           DateTime    @updatedAt
+
+  alerts              Alert[]
+  savedGrants         SavedGrant[]
+
+  @@unique([sourceId, externalId])
+  @@index([status, deadline])
+  @@index([status])
+  @@index([program])
+  @@index([fundingType])
+}
+
+// ─── USERS & AUTH ────────────────────────────────────
+
+model User {
+  id               String        @id @default(cuid())
+  supabaseId       String        @unique  // maps to Supabase auth.users.id
+  email            String        @unique
+  name             String?
+  avatarUrl        String?
+  stripeCustomerId String?       @unique
+  subscription     Subscription?
+  profile          UserProfile?
+  alerts           Alert[]
+  savedGrants      SavedGrant[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+}
+
+model UserProfile {
+  id              String        @id @default(cuid())
+  userId          String        @unique
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companySizePref CompanySize[]
+  companyName     String?
+  taxNumber       String?       // adószám
+  sectorPrefs     String[]
+  regionPrefs     String[]
+  fundingTypes    FundingType[]
+  minAmount       BigInt?
+  maxAmount       BigInt?
+  maxDeadlineDays Int?          // only show grants closing within N days
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+// ─── SUBSCRIPTIONS ───────────────────────────────────
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String   @unique
+  stripePriceId        String
+  plan                 Plan     @default(FREE)
+  status               String   // active | canceled | past_due | trialing | incomplete
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+// ─── ALERTS & SAVED GRANTS ──────────────────────────
+
+model Alert {
+  id        String    @id @default(cuid())
+  userId    String
+  grantId   String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grant     Grant     @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  type      AlertType
+  sentAt    DateTime?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, sentAt])
+}
+
+model SavedGrant {
+  id        String   @id @default(cuid())
+  userId    String
+  grantId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grant     Grant    @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@unique([userId, grantId])
+}
+
+// ─── ENUMS ───────────────────────────────────────────
+
+enum GrantStatus {
+  OPEN
+  FORTHCOMING
+  CLOSED
+  ARCHIVED
+}
+
+enum FundingType {
+  GRANT
+  LOAN
+  GUARANTEE
+  MIXED
+}
+
+enum CompanySize {
+  MICRO
+  SMALL
+  MEDIUM
+}
+
+enum Country {
+  HU
+  EU
+  INT
+}
+
+enum CrawlMethod {
+  RSS
+  API
+  FIRECRAWL_CRAWL
+  FIRECRAWL_SCRAPE
+}
+
+enum Plan {
+  FREE
+  PRO
+  AGENCY
+}
+
+enum AlertType {
+  NEW_GRANT
+  DEADLINE_APPROACHING
+  STATUS_CHANGE
+  GRANT_UPDATED
+}

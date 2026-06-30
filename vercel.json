@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/scrape-palyazat",
+      "schedule": "0 3 * * 1"
+    },
+    {
+      "path": "/api/cron/scrape-eu",
+      "schedule": "0 1 * * 1"
+    },
+    {
+      "path": "/api/cron/scrape-hu",
+      "schedule": "0 4 * * 1,4"
+    }
+  ]
+}
