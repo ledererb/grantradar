@@ -5,14 +5,16 @@ import { searchRateLimit, applyRateLimit } from '@/lib/rate-limit'
 import { getUserPlan, planLimits } from '@/lib/plan-limits'
 import { createClient } from '@/lib/supabase/server'
 import { searchGrantsSchema } from '@/lib/validations'
+import { handleApiError } from '@/lib/errors'
 import type { GrantStatus, FundingType, CompanySize } from '@prisma/client'
 
 /**
  * GET /api/grants — Public grant listing with filters + search
  */
 export async function GET(request: NextRequest) {
-  const limited = await applyRateLimit(searchRateLimit, request)
-  if (limited) return limited
+  try {
+    const limited = await applyRateLimit(searchRateLimit, request)
+    if (limited) return limited
 
   const { searchParams } = new URL(request.url)
 
@@ -175,4 +177,7 @@ export async function GET(request: NextRequest) {
     limit,
     totalPages: Math.ceil(total / limit),
   })
+  } catch (error) {
+    return handleApiError(error, 'Grants GET')
+  }
 }

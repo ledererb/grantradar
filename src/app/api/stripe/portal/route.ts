@@ -3,6 +3,7 @@ import { stripe } from '@/lib/stripe'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
 import { generalRateLimit, applyRateLimit } from '@/lib/rate-limit'
+import { handleApiError } from '@/lib/errors'
 
 /**
  * POST /api/stripe/portal — Redirect to Stripe Customer Portal
@@ -38,10 +39,6 @@ export async function POST(request: Request) {
 
     return NextResponse.redirect(portalSession.url)
   } catch (error) {
-    console.error('[Stripe Portal] Error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Stripe Portal')
   }
 }
