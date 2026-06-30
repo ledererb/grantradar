@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
 import { generalRateLimit, applyRateLimit } from '@/lib/rate-limit'
+import { getUserPlan, planLimits } from '@/lib/plan-limits'
 
 /**
  * POST /api/grants/save — Toggle save/unsave a grant
@@ -38,6 +39,24 @@ export async function POST(request: NextRequest) {
     await prisma.savedGrant.delete({ where: { id: existing.id } })
     return NextResponse.json({ saved: false })
   } else {
+    // Save — enforce plan limit on max saved grants for FREE users
+    const plan = await getUserPlan(dbUser.id)
+    const limits = planLimits(plan)
+
+    if (limits.maxSavedGrants !== Infinity) {
+      const currentCount = await prisma.savedGrant.count({ where: { userId: dbUser.id } })
+      if (currentCount >= limits.maxSavedGrants) {
+        return NextResponse.json(
+          {
+            error: `Saved grant limit reached (${limits.maxSavedGrants}). Upgrade to PRO for unlimited saves.`,
+            code: 'PLAN_LIMIT_EXCEEDED',
+            limit: limits.maxSavedGrants,
+          },
+          { status: 403 },
+        )
+      }
+    }
+
     // Save
     await prisma.savedGrant.create({
       data: { userId: dbUser.id, grantId },

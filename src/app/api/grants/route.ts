@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma, pgPool } from '@/lib/db'
 import { generateEmbedding } from '@/lib/openai'
 import { searchRateLimit, applyRateLimit } from '@/lib/rate-limit'
+import { getUserPlan, planLimits } from '@/lib/plan-limits'
+import { createClient } from '@/lib/supabase/server'
 import type { GrantStatus, FundingType, CompanySize } from '@prisma/client'
 
 /**
@@ -30,6 +32,32 @@ export async function GET(request: NextRequest) {
 
   // Semantic search — use vector similarity via raw pg
   if (semanticSearch) {
+    // Gate semantic search by plan: only PRO/AGENCY can use it.
+    const supabase = await createClient()
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+
+    let allowed = false
+    if (authUser) {
+      const dbUser = await prisma.user.findUnique({
+        where: { supabaseId: authUser.id },
+        select: { id: true },
+      })
+      if (dbUser) {
+        const plan = await getUserPlan(dbUser.id)
+        allowed = planLimits(plan).semanticSearch
+      }
+    }
+
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: 'Semantic search requires a PRO plan.',
+          code: 'PLAN_REQUIRED',
+        },
+        { status: 403 },
+      )
+    }
+
     try {
       const embedding = await generateEmbedding(semanticSearch)
       const vectorStr = `[${embedding.join(',')}]`
