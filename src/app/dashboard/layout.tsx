@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { Suspense } from 'react'
 import { LayoutDashboard, Search, Bell, Settings, CreditCard, LogOut, Bookmark } from 'lucide-react'
 import { signOut } from '@/app/actions/auth'
+import { DashboardSkeleton } from '@/components/DashboardSkeleton'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Áttekintés', icon: LayoutDashboard },
@@ -44,7 +46,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="flex-1 overflow-y-auto">
+        <Suspense fallback={<DashboardSkeleton />}>{children}</Suspense>
+      </main>
     </div>
   )
 }
