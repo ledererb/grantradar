@@ -105,6 +105,7 @@ ${(doc?.markdown || '').slice(0, 60000)}`,
           description: grant.description || grant.title || '',
           documentUrls: [],
           sourceUrl,
+          externalId: grant.code || sourceUrl,
         })
         grantsCreated++
         console.log(`[NKFIH] ✓ ${grant.code}: ${grant.title}`)

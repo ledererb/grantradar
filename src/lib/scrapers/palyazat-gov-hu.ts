@@ -237,6 +237,7 @@ export async function scrapePalyazatGovHu() {
           description: `${tender.name}. Támogatási forma: ${tender.formOfSupport}. Program: ${tender.developmentalProgram} / ${tender.operationalProgram}. Támogatási intenzitás: ${tender.rateOfSupport}%.`,
           documentUrls: [],
           sourceUrl,
+          externalId: tender.code || tender.id || sourceUrl,
         })
 
         grantsCreated++

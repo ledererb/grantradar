@@ -99,6 +99,7 @@ ${combinedMarkdown.slice(0, 15000)}`,
           description: grant.description || '',
           documentUrls: [],
           sourceUrl,
+          externalId: grant.code || sourceUrl,
         })
         grantsCreated++
         console.log(`[MFB] ✓ ${grant.code}`)
