@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { ArrowLeft, Calendar, Euro, Building2, ExternalLink, FileText, Sparkles, Clock, Target, ChevronRight } from 'lucide-react'
 import { formatHuf, formatDate, formatRelativeDate, getStatusLabel, getStatusColor, getFundingTypeLabel, getFundingTypeColor, getCompanySizeLabel, getDifficultyInfo } from '@/lib/utils'
 
+export const dynamic = 'force-dynamic'
+
 export default async function GrantDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 

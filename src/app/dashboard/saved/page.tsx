@@ -5,6 +5,8 @@ import { ArrowRight, Calendar, Bookmark, Lock } from 'lucide-react'
 import { formatRelativeDate, getStatusLabel } from '@/lib/utils'
 import { getUserPlan, planLimits, type Plan } from '@/lib/plan-limits'
 
+export const dynamic = 'force-dynamic'
+
 export default async function SavedGrantsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -54,7 +56,7 @@ export default async function SavedGrantsPage() {
           <div className="flex-1 text-sm">
             {atLimit
               ? 'Elérted a FREE csomag mentési limitjét.'
-              : `A FREE csomabbal ${limits.maxSavedGrants} pályázat menthető.`}{' '}
+              : `A FREE csomaggal ${limits.maxSavedGrants} pályázat menthető.`}{' '}
             <Link href="/pricing" className="underline" style={{ color: 'var(--gr-gold)' }}>
               Válts PRO-ra korlátlan mentésért
             </Link>

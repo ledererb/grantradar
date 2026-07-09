@@ -4,6 +4,8 @@ import { Radar, ArrowRight, Calendar, Euro, Lock, Search } from 'lucide-react'
 import { formatHuf, formatRelativeDate, getStatusLabel, getStatusColor, getFundingTypeLabel, getFundingTypeColor, truncate } from '@/lib/utils'
 import { PublicNav, PublicFooter } from '@/components/public-nav'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata = { title: 'Pályázatok böngészése' }
 
 export default async function PublicGrantsPage() {
