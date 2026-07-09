@@ -2,11 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe, PLANS, type PlanKey } from '@/lib/stripe'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
+import { generalRateLimit, applyRateLimit } from '@/lib/rate-limit'
+import { handleApiError } from '@/lib/errors'
 
 /**
  * POST /api/stripe/checkout — Create a Stripe Checkout Session
  */
 export async function POST(request: NextRequest) {
+  const limited = await applyRateLimit(generalRateLimit, request)
+  if (limited) return limited
+
   try {
     const supabase = await createClient()
     const { data: { user: authUser } } = await supabase.auth.getUser()
@@ -82,10 +87,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ url: session.url })
 
   } catch (error) {
-    console.error('[Stripe Checkout] Error:', error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    return handleApiError(error, 'Stripe Checkout')
   }
 }

@@ -3,6 +3,12 @@ import { stripe } from '@/lib/stripe'
 import { prisma } from '@/lib/db'
 import Stripe from 'stripe'
 
+function resolvePlanFromPriceId(priceId: string | undefined): 'FREE' | 'PRO' | 'AGENCY' {
+  if (priceId === process.env.STRIPE_PRO_PRICE_ID) return 'PRO'
+  if (priceId === process.env.STRIPE_AGENCY_PRICE_ID) return 'AGENCY'
+  return 'FREE'
+}
+
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const signature = request.headers.get('stripe-signature')!
@@ -13,7 +19,7 @@ export async function POST(request: NextRequest) {
     event = stripe.webhooks.constructEvent(
       body,
       signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
+      process.env.STRIPE_WEBHOOK_SECRET!,
     )
   } catch (err) {
     console.error('Webhook signature verification failed:', err)
@@ -24,10 +30,12 @@ export async function POST(request: NextRequest) {
     switch (event.type) {
       case 'customer.subscription.created':
       case 'customer.subscription.updated': {
-        const subscription = event.data.object as unknown as Record<string, unknown>
-        const customerId = subscription.customer as string
+        const subscription = event.data.object as Stripe.Subscription
+        const customerId =
+          typeof subscription.customer === 'string'
+            ? subscription.customer
+            : subscription.customer.id
 
-        // Find user by Stripe customer ID
         const user = await prisma.user.findFirst({
           where: { stripeCustomerId: customerId },
         })
@@ -37,51 +45,62 @@ export async function POST(request: NextRequest) {
           break
         }
 
-        // Determine plan from price ID
-        const items = subscription.items as { data: Array<{ price: { id: string } }> }
-        const priceId = items?.data?.[0]?.price?.id
-        let plan: 'FREE' | 'PRO' | 'AGENCY' = 'FREE'
-        if (priceId === process.env.STRIPE_PRO_PRICE_ID) plan = 'PRO'
-        else if (priceId === process.env.STRIPE_AGENCY_PRICE_ID) plan = 'AGENCY'
+        const firstItem = subscription.items.data[0]
+        const priceId = firstItem?.price?.id
+        const plan = resolvePlanFromPriceId(priceId)
+
+        const periodEnd = firstItem?.current_period_end
+        const currentPeriodEnd = periodEnd
+          ? new Date(periodEnd * 1000)
+          : new Date(Date.now() + 30 * 24 * 3600 * 1000)
 
         await prisma.subscription.upsert({
           where: { userId: user.id },
           update: {
-            stripeSubscriptionId: subscription.id as string,
+            stripeSubscriptionId: subscription.id,
             stripePriceId: priceId || '',
             plan,
-            status: subscription.status as string,
-            currentPeriodEnd: new Date(((subscription.current_period_end as number) || Math.floor(Date.now() / 1000) + 30 * 24 * 3600) * 1000),
-            cancelAtPeriodEnd: (subscription.cancel_at_period_end as boolean) || false,
+            status: subscription.status,
+            currentPeriodEnd,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
           },
           create: {
             userId: user.id,
-            stripeSubscriptionId: subscription.id as string,
+            stripeSubscriptionId: subscription.id,
             stripePriceId: priceId || '',
             plan,
-            status: subscription.status as string,
-            currentPeriodEnd: new Date(((subscription.current_period_end as number) || Math.floor(Date.now() / 1000) + 30 * 24 * 3600) * 1000),
+            status: subscription.status,
+            currentPeriodEnd,
+            cancelAtPeriodEnd: subscription.cancel_at_period_end,
           },
         })
 
-        console.log(`[Stripe] Updated subscription for user ${user.email}: ${plan} (${subscription.status})`)
+        console.log(
+          `[Stripe] ${event.type} for user ${user.email}: ${plan} (${subscription.status})` +
+            (subscription.cancel_at_period_end ? ' [cancel_at_period_end]' : ''),
+        )
         break
       }
 
       case 'customer.subscription.deleted': {
-        const subscription = event.data.object as unknown as Record<string, unknown>
-        const customerId = subscription.customer as string
+        const subscription = event.data.object as Stripe.Subscription
+        const customerId =
+          typeof subscription.customer === 'string'
+            ? subscription.customer
+            : subscription.customer.id
 
         const user = await prisma.user.findFirst({
           where: { stripeCustomerId: customerId },
         })
 
         if (user) {
+          // Subscription was actually deleted — deactivate and downgrade to FREE.
           await prisma.subscription.update({
             where: { userId: user.id },
             data: {
               status: 'canceled',
               plan: 'FREE',
+              cancelAtPeriodEnd: false,
             },
           })
           console.log(`[Stripe] Canceled subscription for user ${user.email}`)
@@ -91,7 +110,11 @@ export async function POST(request: NextRequest) {
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice
-        const customerId = invoice.customer as string
+        const customer = invoice.customer
+        const customerId =
+          typeof customer === 'string' ? customer : customer?.id
+
+        if (!customerId) break
 
         const user = await prisma.user.findFirst({
           where: { stripeCustomerId: customerId },

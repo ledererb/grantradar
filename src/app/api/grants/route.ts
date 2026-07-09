@@ -1,16 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, pgPool } from '@/lib/db'
 import { generateEmbedding } from '@/lib/openai'
+import { searchRateLimit, applyRateLimit } from '@/lib/rate-limit'
+import { getUserPlan, planLimits } from '@/lib/plan-limits'
+import { createClient } from '@/lib/supabase/server'
+import { searchGrantsSchema } from '@/lib/validations'
+import { handleApiError } from '@/lib/errors'
 import type { GrantStatus, FundingType, CompanySize } from '@prisma/client'
 
 /**
  * GET /api/grants — Public grant listing with filters + search
  */
 export async function GET(request: NextRequest) {
+  try {
+    const limited = await applyRateLimit(searchRateLimit, request)
+    if (limited) return limited
+
   const { searchParams } = new URL(request.url)
 
-  const page = parseInt(searchParams.get('page') || '1')
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50)
+  // Validate the search query text + pagination. The browse case (no `q`/`semantic`)
+  // only validates pagination.
+  const queryText = searchParams.get('semantic') || searchParams.get('q') || ''
+  if (queryText) {
+    const searchValidation = searchGrantsSchema.safeParse({
+      query: queryText,
+      page: searchParams.get('page') || undefined,
+      pageSize: searchParams.get('limit') || undefined,
+    })
+    if (!searchValidation.success) {
+      return NextResponse.json(
+        { error: 'Invalid request', details: searchValidation.error.flatten() },
+        { status: 400 },
+      )
+    }
+  }
+
+  // Clamp pagination (1..50) for the browse case and as a safety net.
+  const parsedPage = Number.parseInt(searchParams.get('page') || '1', 10)
+  const parsedLimit = Number.parseInt(searchParams.get('limit') || '20', 10)
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1
+  const limit = Math.min(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 20, 50)
   const skip = (page - 1) * limit
 
   // Filters
@@ -26,6 +55,32 @@ export async function GET(request: NextRequest) {
 
   // Semantic search — use vector similarity via raw pg
   if (semanticSearch) {
+    // Gate semantic search by plan: only PRO/AGENCY can use it.
+    const supabase = await createClient()
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+
+    let allowed = false
+    if (authUser) {
+      const dbUser = await prisma.user.findUnique({
+        where: { supabaseId: authUser.id },
+        select: { id: true },
+      })
+      if (dbUser) {
+        const plan = await getUserPlan(dbUser.id)
+        allowed = planLimits(plan).semanticSearch
+      }
+    }
+
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error: 'Semantic search requires a PRO plan.',
+          code: 'PLAN_REQUIRED',
+        },
+        { status: 403 },
+      )
+    }
+
     try {
       const embedding = await generateEmbedding(semanticSearch)
       const vectorStr = `[${embedding.join(',')}]`
@@ -122,4 +177,7 @@ export async function GET(request: NextRequest) {
     limit,
     totalPages: Math.ceil(total / limit),
   })
+  } catch (error) {
+    return handleApiError(error, 'Grants GET')
+  }
 }

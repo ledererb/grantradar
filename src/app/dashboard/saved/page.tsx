@@ -1,8 +1,9 @@
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { ArrowRight, Calendar, Bookmark } from 'lucide-react'
+import { ArrowRight, Calendar, Bookmark, Lock } from 'lucide-react'
 import { formatRelativeDate, getStatusLabel } from '@/lib/utils'
+import { getUserPlan, planLimits, type Plan } from '@/lib/plan-limits'
 
 export default async function SavedGrantsPage() {
   const supabase = await createClient()
@@ -28,14 +29,38 @@ export default async function SavedGrantsPage() {
     orderBy: { createdAt: 'desc' },
   }) : []
 
+  const plan: Plan = dbUser ? await getUserPlan(dbUser.id) : 'FREE'
+  const limits = planLimits(plan)
+  const isCapped = limits.maxSavedGrants !== Infinity
+  const atLimit = isCapped && savedGrants.length >= limits.maxSavedGrants
+
+  const countLabel = isCapped
+    ? `${savedGrants.length}/${limits.maxSavedGrants} pályázat mentve`
+    : `${savedGrants.length} pályázat mentve`
+
   return (
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight mb-1">Mentett pályázatok</h1>
         <p className="text-sm" style={{ color: 'var(--gr-text-2)' }}>
-          {savedGrants.length} pályázat mentve
+          {countLabel}
         </p>
       </div>
+
+      {isCapped && plan !== 'PRO' && plan !== 'AGENCY' && (
+        <div className="card p-4 mb-6 flex items-center gap-3"
+          style={{ borderColor: 'var(--gr-gold)' }}>
+          <Lock className="w-4 h-4 shrink-0" style={{ color: 'var(--gr-gold)' }} />
+          <div className="flex-1 text-sm">
+            {atLimit
+              ? 'Elérted a FREE csomag mentési limitjét.'
+              : `A FREE csomabbal ${limits.maxSavedGrants} pályázat menthető.`}{' '}
+            <Link href="/pricing" className="underline" style={{ color: 'var(--gr-gold)' }}>
+              Válts PRO-ra korlátlan mentésért
+            </Link>
+          </div>
+        </div>
+      )}
 
       {savedGrants.length === 0 ? (
         <div className="card p-12 text-center">
