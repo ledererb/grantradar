@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { ArrowRight, Check } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { PLANS, type PlanKey } from '@/lib/stripe'
 import { PublicNav, PublicFooter } from '@/components/public-nav'
+import { UpgradeButton } from '@/components/UpgradeButton'
 
 export const metadata = { title: 'Árak — GrantRadar' }
 
@@ -28,12 +29,15 @@ export default function PricingPage() {
               const isPro = key === 'PRO'
 
               return (
-                <div key={key} className="p-8 flex flex-col relative"
+                <div
+                  key={key}
+                  className="p-8 flex flex-col relative"
                   style={{
                     background: isPro ? 'var(--gr-bg-surface)' : 'var(--gr-bg-raised)',
                     borderRight: i < 2 ? '1px solid var(--gr-border)' : 'none',
                     borderTop: isPro ? '2px solid var(--gr-gold)' : 'none',
-                  }}>
+                  }}
+                >
                   {isPro && (
                     <span className="absolute top-3 right-3 pill pill-gold text-[10px]">Ajánlott</span>
                   )}
@@ -53,17 +57,27 @@ export default function PricingPage() {
                   <ul className="space-y-3 mb-8 flex-1">
                     {plan.features.map((feature) => (
                       <li key={feature} className="flex items-start gap-2 text-sm">
-                        <Check className="w-3.5 h-3.5 mt-0.5 shrink-0"
-                          style={{ color: isPro ? 'var(--gr-gold)' : 'var(--gr-text-3)' }} />
+                        <Check
+                          className="w-3.5 h-3.5 mt-0.5 shrink-0"
+                          style={{ color: isPro ? 'var(--gr-gold)' : 'var(--gr-text-3)' }}
+                        />
                         <span style={{ color: 'var(--gr-text-2)' }}>{feature}</span>
                       </li>
                     ))}
                   </ul>
 
-                  <Link href={key === 'FREE' ? '/register' : `/register?plan=${key.toLowerCase()}`}
-                    className={isPro ? 'btn-primary w-full py-3 text-center' : 'btn-secondary w-full py-3 text-center'}>
-                    {key === 'FREE' ? 'Ingyenes regisztráció' : 'Csomag kiválasztása'}
-                  </Link>
+                  {key === 'FREE' ? (
+                    <Link href="/register" className="btn-secondary w-full py-3 text-center">
+                      Ingyenes regisztráció
+                    </Link>
+                  ) : (
+                    <UpgradeButton
+                      plan={key}
+                      variant={isPro ? 'primary' : 'secondary'}
+                      label="Csomag kiválasztása"
+                      className="w-full py-3"
+                    />
+                  )}
                 </div>
               )
             })}

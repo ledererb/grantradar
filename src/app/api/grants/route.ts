@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, pgPool } from '@/lib/db'
 import { generateEmbedding } from '@/lib/openai'
-import { searchRateLimit, applyRateLimit } from '@/lib/rate-limit'
+import { searchRateLimit, generalRateLimit, applyRateLimit } from '@/lib/rate-limit'
 import { getUserPlan, planLimits } from '@/lib/plan-limits'
 import { createClient } from '@/lib/supabase/server'
 import { searchGrantsSchema } from '@/lib/validations'
@@ -13,10 +13,13 @@ import type { GrantStatus, FundingType, CompanySize } from '@prisma/client'
  */
 export async function GET(request: NextRequest) {
   try {
-    const limited = await applyRateLimit(searchRateLimit, request)
-    if (limited) return limited
-
   const { searchParams } = new URL(request.url)
+  const isSemantic = Boolean(searchParams.get('semantic'))
+  const limited = await applyRateLimit(
+    isSemantic ? searchRateLimit : generalRateLimit,
+    request,
+  )
+  if (limited) return limited
 
   // Validate the search query text + pagination. The browse case (no `q`/`semantic`)
   // only validates pagination.

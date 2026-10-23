@@ -5,7 +5,7 @@ const globalForFirecrawl = globalThis as unknown as {
 }
 
 export const firecrawl = globalForFirecrawl.firecrawl ?? new Firecrawl({
-  apiKey: process.env.FIRECRAWL_API_KEY || '',
+  apiKey: process.env.FIRECRAWL_API_KEY || 'fc-placeholder-build',
 })
 
 if (process.env.NODE_ENV !== 'production') globalForFirecrawl.firecrawl = firecrawl

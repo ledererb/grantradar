@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { ArrowRight, ArrowUpRight, Zap, Search, Bell, Shield, BarChart3, Globe2 } from 'lucide-react'
+import { ArrowRight, Zap, Search, Bell, Shield, BarChart3, Globe2 } from 'lucide-react'
 import { PublicNav, PublicFooter } from '@/components/public-nav'
+import { PublicPreScreener } from '@/components/PublicPreScreener'
 
 const LIVE_SOURCES = [
   'palyazat.gov.hu', 'NKFIH', 'DIMOP Plusz', 'KAVOSZ', 'MFB',
@@ -66,6 +67,13 @@ export default function LandingPage() {
               </span>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ─── INTERACTIVE 2-MINUTE PRE-SCREENER ─── */}
+      <section id="eloszuro" className="py-20 px-6">
+        <div className="max-w-5xl mx-auto">
+          <PublicPreScreener />
         </div>
       </section>
 
@@ -135,8 +143,8 @@ export default function LandingPage() {
               },
               {
                 icon: BarChart3,
-                title: 'Nehézségi pontszám',
-                desc: 'Minden pályázatot 1-10 skálán pontozunk — tudd előre, mekkora adminisztrációra számíts.',
+                title: 'Nehézségi pontszám és előszűrő',
+                desc: 'Minden pályázatot 1–5 skálán pontozunk, és 2 perces előszűrővel ellenőrizzük a jogosultságot és a tipikus bukópontokat.',
                 accent: false,
               },
               {

@@ -11,6 +11,14 @@
     {
       "path": "/api/cron/scrape-hu",
       "schedule": "0 4 * * 1,4"
+    },
+    {
+      "path": "/api/cron/deep-scrape",
+      "schedule": "0 5 * * 1,4"
+    },
+    {
+      "path": "/api/cron/send-alerts",
+      "schedule": "0 6 * * *"
     }
   ]
 }

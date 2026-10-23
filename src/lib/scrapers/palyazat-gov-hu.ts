@@ -116,13 +116,17 @@ function mapFundingType(form: string): string {
 }
 
 /**
- * Check if a tender is relevant for businesses (SMB filter).
+ * Check if a tender is relevant for businesses or agricultural enterprises (SMB & Agri filter).
  */
 function isBusinessRelevant(tender: PalyazatTender): boolean {
   const allCats = [...tender.beneficiaries, ...tender.categories].map(s => s.toLowerCase())
+  if (allCats.length === 0) return true
 
-  // Must have at least one business-type beneficiary
-  const businessTerms = ['vállalkozás', 'kkv', 'mikro', 'kis- és közepes']
+  // Must have at least one business-type or agricultural beneficiary
+  const businessTerms = [
+    'vállalkozás', 'kkv', 'mikro', 'kis- és közepes', 'gazdasági társaság',
+    'egyéni vállalkozó', 'őstermelő', 'mezőgazdasági', 'szövetkezet', 'termelő',
+  ]
   return allCats.some(cat => businessTerms.some(term => cat.includes(term)))
 }
 
@@ -217,7 +221,7 @@ export async function scrapePalyazatGovHu() {
     for (const tender of tenders) {
       try {
         grantsFound++
-
+        if (!isBusinessRelevant(tender)) continue
 
         const sourceUrl = buildDetailUrl(tender)
 

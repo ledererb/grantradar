@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
 import { updateProfileSchema } from '@/lib/validations'
 import { handleApiError } from '@/lib/errors'
+import { parseUserProfile, serializeRegionPrefsWithMeta } from '@/lib/grant-handbook'
+import type { CompanySize } from '@prisma/client'
 
 export async function GET() {
   try {
@@ -18,7 +20,11 @@ export async function GET() {
       include: { profile: true },
     })
 
-    return NextResponse.json({ profile: dbUser?.profile || null })
+    const parsedProfile = parseUserProfile(dbUser?.profile)
+
+    return NextResponse.json({
+      profile: dbUser?.profile ? parsedProfile : null,
+    })
   } catch (error) {
     return handleApiError(error, 'Profile GET')
   }
@@ -33,46 +39,49 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const dbUser = await prisma.user.findUnique({ where: { supabaseId: user.id } })
-    if (!dbUser) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
+    // Ensure the User row exists even if user signed in via password without OAuth callback
+    const dbUser = await prisma.user.upsert({
+      where: { supabaseId: user.id },
+      update: {},
+      create: {
+        supabaseId: user.id,
+        email: user.email || `${user.id}@grantradar.local`,
+        name: user.user_metadata?.name || null,
+      },
+    })
 
-    // Validate known fields (email/name). Pass through company-specific fields
-    // (companyName, taxNumber, companySizePref, sectorPrefs) which this endpoint
-    // also persists.
-    const parsed = updateProfileSchema.passthrough().safeParse(await request.json())
+    const parsed = updateProfileSchema.safeParse(await request.json())
     if (!parsed.success) {
       return NextResponse.json(
         { error: 'Invalid request', details: parsed.error.flatten() },
         { status: 400 },
       )
     }
-    const body = parsed.data as {
-      companyName?: string
-      taxNumber?: string
-      companySizePref?: never
-      sectorPrefs?: string[]
-    }
+
+    const body = parsed.data
+    const regionPrefs = serializeRegionPrefsWithMeta(body)
+    const companySizePref = (body.companySizePref || []) as CompanySize[]
 
     const profile = await prisma.userProfile.upsert({
       where: { userId: dbUser.id },
       update: {
         companyName: body.companyName || null,
         taxNumber: body.taxNumber || null,
-        companySizePref: body.companySizePref || [],
+        companySizePref,
         sectorPrefs: body.sectorPrefs || [],
+        regionPrefs,
       },
       create: {
         userId: dbUser.id,
         companyName: body.companyName || null,
         taxNumber: body.taxNumber || null,
-        companySizePref: body.companySizePref || [],
+        companySizePref,
         sectorPrefs: body.sectorPrefs || [],
+        regionPrefs,
       },
     })
 
-    return NextResponse.json({ profile })
+    return NextResponse.json({ profile: parseUserProfile(profile) })
   } catch (error) {
     return handleApiError(error, 'Profile PUT')
   }

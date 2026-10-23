@@ -5,7 +5,7 @@ const globalForOpenAI = globalThis as unknown as {
 }
 
 export const openai = globalForOpenAI.openai ?? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY || 'sk-placeholder-build',
 })
 
 if (process.env.NODE_ENV !== 'production') globalForOpenAI.openai = openai
@@ -35,11 +35,16 @@ export async function enrichGrant(grantData: {
   minAmountHuf?: bigint | null
   maxAmountHuf?: bigint | null
 }) {
-  const prompt = `Te egy magyar KKV pályázati tanácsadó vagy. Az alábbi nyers pályázati adatok alapján készítsd el a következőket:
+  const prompt = `Te egy vezető magyar KKV és agrár pályázati tanácsadó vagy (GINOP Plusz, DIMOP Plusz, KAP, NKFIH, MFB/KAVOSZ szakértő).
+Az alábbi pályázati adatok alapján készítsd el a strukturált elemzést:
 
-1. Egy 2-3 mondatos összefoglaló (aiSummaryHu) — mi ez a pályázat, kinek szól, mire kaphat támogatást
-2. 3-5 kulcspont (aiKeyPoints) — a legfontosabb tudnivalók röviden
-3. Nehézségi szint (aiDifficultyScore) 1-5 skálán (1 = könnyű, 5 = nagyon bonyolult)
+1. Egy 3-4 mondatos gyakorlati összefoglaló (aiSummaryHu) — mi a pályázat célja, pontosan ki indulhat (cégforma, KKV/agrár státusz, régió), mire ad pénzt és milyen konstrukcióban (VNT / hitel / kombinált).
+2. 4-6 tömör, szakmai kulcspont (aiKeyPoints), amelyek tartalmazzák:
+   - Jogosultsági alapkövetelmény (pl. lezárt üzleti évek száma, KNYR/STÉ agrárnál, digitális érettség DIMOP+-nál, régiós korlát GINOP+-nál)
+   - Támogatható költségek köre (pl. új gép/technológia, IKT/szoftver, építés, energetika, bér)
+   - Pénzügyi keret, támogatási intenzitás / elvárt önerő és állami támogatási jogcím (pl. De minimis, regionális beruházási, KAP)
+   - Legfontosabb bukópont / kockázat (pl. túl korai projektkezdés tilalma, árbevétel-arányosság, önálló hardver korlát, 12 hónapos 10%-os elszámolás)
+3. Nehézségi szint (aiDifficultyScore) 1-5 skálán (1 = egyszerű de minimis / hitel, 3 = sztenderd beruházási VNT, 5 = komplex K+F+I vagy többlépcsős EU pályázat)
 4. Releváns ágazatok listája (aiSectors) — max 5
 
 Pályázat adatai:

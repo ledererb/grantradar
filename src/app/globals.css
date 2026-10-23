@@ -36,6 +36,17 @@
   --gr-amber: #F59E0B;
   --gr-blue: #3B82F6;
 
+  /* Semantic aliases (v1 -> v2 compatibility) */
+  --gr-primary: var(--gr-gold);
+  --gr-primary-light: var(--gr-gold-light);
+  --gr-accent: var(--gr-gold);
+  --gr-bg-base: var(--gr-bg);
+  --gr-bg-elevated: var(--gr-bg-surface);
+  --gr-glass-border: var(--gr-border);
+  --gr-text-primary: var(--gr-text);
+  --gr-text-secondary: var(--gr-text-2);
+  --gr-text-muted: var(--gr-text-3);
+
   /* Spacing scale */
   --space-xs: 4px;
   --space-sm: 8px;
@@ -228,13 +239,14 @@ body {
   text-decoration: none;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: var(--gr-gold-light);
   transform: translateY(-1px);
   box-shadow: 0 8px 24px rgba(232, 185, 49, 0.2);
 }
 
-.btn-primary:active { transform: translateY(0); }
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
   display: inline-flex;
@@ -253,10 +265,12 @@ body {
   text-decoration: none;
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: var(--gr-bg-hover);
   border-color: var(--gr-border-strong);
 }
+
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ─── INPUT ────────────────────────────────────────── */
 
@@ -364,4 +378,173 @@ body {
 
 .glass-card:hover {
   border-color: var(--gr-border-strong);
+}
+
+/* ─── RESPONSIVE DATA TABLES (Eligibility Matrix & Costs) ─── */
+
+.table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  container-type: inline-size;
+  border: 1px solid var(--gr-border);
+  border-radius: 10px;
+  background: var(--gr-bg-raised);
+}
+
+.table-wrapper table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.table-wrapper thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--gr-bg-surface);
+}
+
+.table-wrapper thead th {
+  text-align: start;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gr-text-2);
+  border-block-end: 1px solid var(--gr-border);
+}
+
+.table-wrapper tbody th,
+.table-wrapper tbody td {
+  padding: 12px 14px;
+  vertical-align: top;
+  text-align: start;
+}
+
+.table-wrapper tbody tr:not(:last-child) th,
+.table-wrapper tbody tr:not(:last-child) td {
+  border-block-end: 1px solid var(--gr-border);
+}
+
+.table-wrapper tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  background: var(--gr-bg-raised);
+  font-weight: 600;
+  color: var(--gr-text);
+}
+
+@container (width < 600px) {
+  .table-wrapper table,
+  .table-wrapper thead,
+  .table-wrapper tbody,
+  .table-wrapper tr,
+  .table-wrapper th,
+  .table-wrapper td {
+    display: block;
+  }
+
+  .table-wrapper thead {
+    display: none;
+  }
+
+  .table-wrapper tbody tr {
+    margin-block-end: 12px;
+    border: 1px solid var(--gr-border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .table-wrapper tbody th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background: var(--gr-bg-surface);
+    border-block-end: 1px solid var(--gr-border);
+  }
+
+  .table-wrapper tbody td:nth-child(2)::before {
+    content: var(--label-2, "") ": ";
+    font-weight: 600;
+    color: var(--gr-text-2);
+  }
+
+  .table-wrapper tbody td:nth-child(3)::before {
+    content: var(--label-3, "") ": ";
+    font-weight: 600;
+    color: var(--gr-text-2);
+  }
+
+  .table-wrapper tbody td:nth-child(4)::before {
+    content: var(--label-4, "") ": ";
+    font-weight: 600;
+    color: var(--gr-text-2);
+  }
+
+  .table-wrapper tbody td:nth-child(5)::before {
+    content: var(--label-5, "") ": ";
+    font-weight: 600;
+    color: var(--gr-text-2);
+  }
+}
+
+/* ─── PRE-SCREENER RADIO CARDS (:has(:checked)) ───── */
+
+.prescreen-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--gr-border);
+  background: var(--gr-bg-surface);
+  color: var(--gr-text-2);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+}
+
+.prescreen-option:hover {
+  border-color: var(--gr-border-strong);
+  color: var(--gr-text);
+}
+
+.prescreen-option:has(:checked) {
+  background: var(--gr-gold-muted);
+  border-color: var(--gr-gold);
+  color: var(--gr-gold-light);
+  font-weight: 600;
+}
+
+.prescreen-option:has(:focus-visible) {
+  outline: 2px solid var(--gr-gold);
+  outline-offset: 2px;
+}
+
+/* ─── PRINT STYLES FOR CLIENT PDF REPORTS ──────────── */
+
+@media print {
+  aside,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  .card,
+  .stat-card,
+  .table-wrapper {
+    background: #ffffff !important;
+    border-color: #d4d4d8 !important;
+    color: #111111 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
 }

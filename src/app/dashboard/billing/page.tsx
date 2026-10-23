@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/db'
-import Link from 'next/link'
 import { CreditCard, Check, ArrowUpRight } from 'lucide-react'
-import { PLANS } from '@/lib/stripe'
+import { PLANS, type PlanKey } from '@/lib/stripe'
+import { UpgradeButton } from '@/components/UpgradeButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,11 +19,11 @@ export default async function BillingPage() {
     subscription = dbUser?.subscription
   }
 
-  const currentPlan = subscription?.plan || 'FREE'
-  const plan = PLANS[currentPlan as keyof typeof PLANS]
+  const currentPlan = (subscription?.plan || 'FREE') as PlanKey
+  const plan = PLANS[currentPlan]
 
   return (
-    <div className="p-8">
+    <div className="p-8 max-w-4xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight mb-1">Előfizetés</h1>
         <p className="text-sm" style={{ color: 'var(--gr-text-2)' }}>
@@ -32,8 +32,8 @@ export default async function BillingPage() {
       </div>
 
       {/* Current Plan Card */}
-      <div className="card p-6 mb-6">
-        <div className="flex items-start justify-between mb-6">
+      <div className="card p-6 mb-8">
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <CreditCard className="w-4 h-4" style={{ color: 'var(--gr-gold)' }} />
@@ -48,14 +48,13 @@ export default async function BillingPage() {
               </span>
             </div>
           </div>
+
           {currentPlan === 'FREE' ? (
-            <Link href="/pricing" className="btn-primary text-xs py-2 px-4">
-              Csomag váltás <ArrowUpRight className="w-3 h-3" />
-            </Link>
+            <UpgradeButton plan="PRO" label="Váltás PRO csomagra (€29/hó)" className="text-xs py-2 px-4" />
           ) : (
             <form action="/api/stripe/portal" method="POST">
               <button type="submit" className="btn-secondary text-xs py-2 px-4">
-                Stripe kezelőpanel <ArrowUpRight className="w-3 h-3" />
+                Stripe számlázási portál <ArrowUpRight className="w-3 h-3" />
               </button>
             </form>
           )}
@@ -76,17 +75,40 @@ export default async function BillingPage() {
         </div>
       </div>
 
-      {/* Upgrade Prompt for Free Users */}
-      {currentPlan === 'FREE' && (
-        <div className="card p-6"
-          style={{ borderColor: 'var(--gr-gold-dim)', background: 'var(--gr-gold-muted)' }}>
-          <h3 className="text-sm font-bold mb-2">Pro-ra váltanál?</h3>
-          <p className="text-sm mb-4" style={{ color: 'var(--gr-text-2)' }}>
-            Korlátlan keresés, e-mail értesítések, mentett szűrők és export funkciók.
-          </p>
-          <Link href="/pricing" className="btn-primary text-sm py-2.5 px-6">
-            Csomagok megtekintése
-          </Link>
+      {/* Upgrade Options for Free / Pro Users */}
+      {currentPlan !== 'AGENCY' && (
+        <div className="grid md:grid-cols-2 gap-4">
+          {currentPlan === 'FREE' && (
+            <div
+              className="card p-6 flex flex-col justify-between"
+              style={{ borderColor: 'var(--gr-gold-dim)', background: 'var(--gr-gold-muted)' }}
+            >
+              <div>
+                <span className="pill pill-gold mb-2">Ajánlott KKV-knak</span>
+                <h3 className="text-base font-bold mb-1">Pro csomag — €29/hó</h3>
+                <p className="text-xs mb-4" style={{ color: 'var(--gr-text-2)' }}>
+                  AI szemantikus keresés, korlátlan pályázatmentés és előkészítő dokumentumlista, személyre szabott értesítések.
+                </p>
+              </div>
+              <UpgradeButton plan="PRO" label="Pro előfizetés indítása" className="w-full py-2.5 text-xs" />
+            </div>
+          )}
+
+          <div className="card p-6 flex flex-col justify-between">
+            <div>
+              <span className="pill pill-muted mb-2">Pályázatíróknak és tanácsadóknak</span>
+              <h3 className="text-base font-bold mb-1">Agency csomag — €99/hó</h3>
+              <p className="text-xs mb-4" style={{ color: 'var(--gr-text-2)' }}>
+                Minden Pro funkció + több ügyfél-előszűrés, CSV/API export és prioritásos támogatás.
+              </p>
+            </div>
+            <UpgradeButton
+              plan="AGENCY"
+              variant="secondary"
+              label="Agency előfizetés indítása"
+              className="w-full py-2.5 text-xs"
+            />
+          </div>
         </div>
       )}
     </div>

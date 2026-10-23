@@ -6,7 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 const PUBLIC_API_ROUTES = ['/api/stripe/webhook', '/api/cron']
 
 // Public page routes
-const PUBLIC_PAGES = ['/', '/pricing', '/grants', '/login', '/register', '/privacy', '/terms']
+const PUBLIC_PAGES = ['/', '/pricing', '/grants', '/login', '/register', '/privacy', '/terms', '/adatkezeles', '/impresszum']
 
 function isPublicApiRoute(pathname: string) {
   return PUBLIC_API_ROUTES.some(

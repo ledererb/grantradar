@@ -72,17 +72,18 @@ export async function deepScrapeGrants(limit = 5): Promise<{
         model: 'gpt-4o-mini',
         messages: [{
           role: 'user',
-          content: `Nyerd ki a pályázat részleteit JSON-ban.
+          content: `Te egy magyar EU-s pályázati szakértő vagy (GINOP Plusz, DIMOP Plusz, KAP, NKFIH). Nyerd ki a pályázat részleteit strukturált JSON-ban az alábbi felhívás szövegéből.
 
 Pályázat: ${grant.titleHu || grant.titleEn || 'N/A'} (${grant.code || 'N/A'})
 
 Kért mezők:
 {
-  "descriptionHu": "3-6 mondatos leírás",
-  "eligibilityHu": "Ki pályázhat? Feltételek.",
-  "applicationStepsHu": "Hogyan kell pályázni? 3-5 lépés.",
-  "eligibleSizes": ["MICRO","SMALL","MEDIUM","LARGE"],
+  "descriptionHu": "4-6 mondatos részletes szakmai összefoglaló (cél, támogatható tevékenységek, elszámolható költségek köre, állami támogatási jogcím)",
+  "eligibilityHu": "Részletes jogosultsági feltételek: pályázói kör (cégforma, KKV/őstermelő/KNYR), elvárt lezárt üzleti évek száma, minimális létszám, pénzügyi feltételek (saját tőke, árbevétel-arány), területi hatály (régiók), KAP esetén STÉ üzemméret és Egységes Kérelem, kizáró okok.",
+  "applicationStepsHu": "A pályázás és megvalósítás 4-6 konkrét lépése: előkészítés (árajánlatok, KOMA, telephely, digitális felmérés/STÉ), benyújtási szakaszok, előleg/elszámolási mérföldkövek és fenntartási kötelezettség.",
+  "eligibleSizes": ["MICRO","SMALL","MEDIUM"],
   "eligibleSectors": ["szektor"],
+  "eligibleRegions": ["régió vagy 'Országos' vagy 'Kevésbé fejlett régiók'"],
   "supportIntensityPct": null,
   "minAmountHuf": null,
   "maxAmountHuf": null
@@ -123,6 +124,11 @@ ${markdown.slice(0, 30000)}`,
       // Skip eligibleSizes — already set during initial scrape, Prisma enum validation is strict
       const sectors = detail.eligibleSectors as string[] | undefined
       if (sectors && sectors.length > 0) updateData.eligibleSectors = sectors
+
+      const regions = detail.eligibleRegions as string[] | undefined
+      if (regions && Array.isArray(regions) && regions.length > 0) {
+        updateData.eligibleRegions = regions.filter((r): r is string => typeof r === 'string')
+      }
 
       const pct = detail.supportIntensityPct as number | null
       if (pct != null && typeof pct === 'number') updateData.supportIntensityPct = pct

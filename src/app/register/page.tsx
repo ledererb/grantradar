@@ -13,8 +13,8 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState(false)
 
   const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key',
   )
 
   async function handleRegister(e: React.FormEvent) {
@@ -22,10 +22,16 @@ export default function RegisterPage() {
     setLoading(true)
     setError('')
 
+    const params = new URLSearchParams(window.location.search)
+    const planParam = params.get('plan')
+    const nextPath = planParam ? '/dashboard/billing' : '/dashboard'
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath)}`,
+      },
     })
 
     if (error) {

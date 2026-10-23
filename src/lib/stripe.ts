@@ -1,6 +1,6 @@
 import Stripe from 'stripe'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_placeholder_build', {
   apiVersion: '2026-04-22.dahlia',
   typescript: true,
 })
@@ -13,18 +13,18 @@ export const PLANS = {
     price: 0,
     currency: 'eur',
     features: [
-      'Havi 10 pályázat megtekintése',
-      'Alapszintű keresés',
-      'Heti hírlevél',
+      'Pályázatok böngészése és szűrése',
+      '5 mentett pályázat + előkészítő checklist',
+      '2 perces jogosultsági előszűrő',
     ],
     limits: {
       grantsPerMonth: 10,
-      savedGrants: 3,
+      savedGrants: 5,
       alerts: false,
       aiSummaries: false,
       semanticSearch: false,
       export: false,
-      profiles: 0,
+      profiles: 1,
     },
   },
   PRO: {
@@ -34,17 +34,16 @@ export const PLANS = {
     price: 29,
     currency: 'eur',
     features: [
-      'Korlátlan pályázat megtekintése',
-      'AI összefoglalók és elemzések',
-      'Szemantikus keresés',
-      'E-mail értesítések',
-      'Szűrés szektoronként és méretenként',
-      '1 cégprofil',
-      'Mentett pályázatok',
+      'Korlátlan pályázat megtekintése és mentése',
+      'AI összefoglalók, bukópontok és elemzések',
+      'Szemantikus AI keresés',
+      'Személyre szabott jogosultsági mátrix',
+      'Pályázati és határidő értesítések',
+      '1 teljes cégprofil (GINOP+ / DIMOP+ / KAP)',
     ],
     limits: {
       grantsPerMonth: Infinity,
-      savedGrants: 50,
+      savedGrants: Infinity,
       alerts: true,
       aiSummaries: true,
       semanticSearch: true,
