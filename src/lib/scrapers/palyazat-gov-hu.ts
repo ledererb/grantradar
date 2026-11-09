@@ -1,5 +1,54 @@
+import https from 'node:https'
 import { prisma } from '@/lib/db'
 import { upsertGrant, logCrawlRun } from './shared'
+
+/**
+ * Fetch helper that falls back to Node https.request with rejectUnauthorized: false
+ * when Vercel/Linux Node CA store lacks the Hungarian government Microsec e-Szigno CA.
+ */
+async function govFetchText(
+  url: string,
+  options?: { method?: string; headers?: Record<string, string>; body?: string },
+): Promise<{ ok: boolean; status: number; text: string }> {
+  try {
+    const resp = await fetch(url, {
+      method: options?.method || 'GET',
+      headers: options?.headers,
+      body: options?.body,
+    })
+    return { ok: resp.ok, status: resp.status, text: await resp.text() }
+  } catch (err) {
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(url)
+      const req = https.request(
+        {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port || 443,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: options?.method || 'GET',
+          headers: options?.headers,
+          rejectUnauthorized: false,
+          timeout: 20000,
+        },
+        (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (c) => chunks.push(Buffer.from(c)))
+          res.on('end', () => {
+            const status = res.statusCode || 500
+            resolve({
+              ok: status >= 200 && status < 300,
+              status,
+              text: Buffer.concat(chunks).toString('utf8'),
+            })
+          })
+        },
+      )
+      req.on('error', () => reject(err))
+      if (options?.body) req.write(options.body)
+      req.end()
+    })
+  }
+}
 
 const SOURCE_SLUG = 'palyazat-gov-hu'
 // Aktív status GUID (stable UUID from palyazat.gov.hu's filter system)
@@ -56,7 +105,7 @@ async function fetchViaDirectApi(): Promise<PalyazatTender[]> {
   let totalCount = Infinity
 
   while (all.length < totalCount && pageIndex < 20) {
-    const resp = await fetch(`${FAIR_API_BASE}/papi/tenders/list`, {
+    const resp = await govFetchText(`${FAIR_API_BASE}/papi/tenders/list`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -76,7 +125,7 @@ async function fetchViaDirectApi(): Promise<PalyazatTender[]> {
       throw new Error(`FairApp API returned HTTP ${resp.status}`)
     }
 
-    const data = (await resp.json()) as {
+    const data = JSON.parse(resp.text) as {
       tenders?: PalyazatTender[]
       pagination?: { totalCount?: number }
     }
@@ -96,13 +145,13 @@ async function fetchViaDirectApi(): Promise<PalyazatTender[]> {
  */
 async function fetchPage(page: number): Promise<{ tenders: PalyazatTender[]; totalCount: number }> {
   const url = `${BASE_URL}&page=${page}`
-  const resp = await fetch(url, {
+  const resp = await govFetchText(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GrantRadar/1.0)' },
   })
 
   if (!resp.ok) throw new Error(`HTTP ${resp.status} for page ${page}`)
 
-  const html = await resp.text()
+  const html = resp.text
 
   const startMarker = '<script id="__NEXT_DATA__" type="application/json">'
   const endMarker = '</script>'
@@ -207,11 +256,11 @@ function isBusinessRelevant(tender: PalyazatTender): boolean {
 async function resolveDetailUrl(tender: PalyazatTender): Promise<string> {
   if (tender.code) {
     try {
-      const resp = await fetch(
+      const resp = await govFetchText(
         `${FAIR_API_BASE}/operational-map/call-for-applications-route?code=${encodeURIComponent(tender.code)}`,
       )
       if (resp.ok) {
-        const data = (await resp.json()) as { route?: string }
+        const data = JSON.parse(resp.text) as { route?: string }
         if (data?.route) {
           const segments = data.route.split('/')
           if (segments.length === 4) {

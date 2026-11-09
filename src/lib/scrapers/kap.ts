@@ -28,48 +28,51 @@ export interface ParsedKapCard {
   endDate: string | null
 }
 
+export interface KapDetailInfo {
+  goal: string | null
+  beneficiaries: string | null
+  conditions: string | null
+  intensityText: string | null
+  intensityPct: number | null
+  procedureType: string | null
+  budgetText: string | null
+  nextPhaseText: string | null
+  furtherPhasesText: string | null
+  startDate: string | null
+  endDate: string | null
+}
+
 /**
  * Parse a single grant card HTML snippet from the KAP REST API.
- * Each doc is a raw HTML string like:
- *   <div class="pbitem"><div class="pbtitle">Title - KAP-RD01-1-25</div>...
  */
 export function parseGrantCard(html: string): ParsedKapCard {
-  // Title: <div class="pbtitle">Erdőtelepítés - KAP-RD38-RD39-1-25</div>
   const titleMatch = html.match(/pbtitle">\s*(.*?)\s*</)
   const rawTitle = titleMatch?.[1]?.trim() || ''
 
-  // Code: KAP-RDxx-xx-xx pattern
   const codeMatch = rawTitle.match(/(KAP-[A-Za-z0-9_-]+)/)
   const code = codeMatch?.[1] || null
 
-  // Clean title: remove the code suffix
   const title = code
     ? rawTitle.replace(/\s*-\s*KAP-[A-Za-z0-9_-]+$/, '').replace(code, '').trim()
     : rawTitle
 
-  // Status: Aktív / Lezárult / Felfüggesztve
   const statusMatch = html.match(/(Aktív|Lezárult|Felfüggesztve)/)
   const status = (statusMatch?.[1] as 'Aktív' | 'Lezárult' | 'Felfüggesztve') || null
 
-  // Detail URL: either <a href="/tamogatas/..."> or onclick="window.open('/tamogatas/...', '_self');"
   const urlMatch =
     html.match(/href="(\/tamogatas\/[^"]+)"/) ||
     html.match(/window\.open\(['"](\/tamogatas\/[^'"]+)['"]/)
   const detailUrl = urlMatch?.[1] || null
 
-  // Min amount: after "Támogatás minimum összege</label>"
   const minMatch = html.match(/minimum összege<\/label>([^<]+)/)
   const minAmount = minMatch?.[1]?.trim() || null
 
-  // Max amount: after "Támogatás maximum összege</label>"
   const maxMatch = html.match(/maximum összege<\/label>([^<]+)/)
   const maxAmount = maxMatch?.[1]?.trim() || null
 
-  // Support form: after "Támogatás formája</label>"
   const formMatch = html.match(/formája<\/label>([^<]+)/)
   const supportForm = formMatch?.[1]?.trim() || null
 
-  // Dates: "2025-01-27 <img src="/themes/kap/images/arrow.png"> 2025-03-13" or "2025-01-27 → 2025-03-13"
   const dateMatch = html.match(
     /(\d{4}-\d{2}-\d{2})\s*(?:→|<img[^>]*>)\s*(\d{4}-\d{2}-\d{2})/i,
   )
@@ -80,23 +83,143 @@ export function parseGrantCard(html: string): ParsedKapCard {
 }
 
 /**
- * Parse amount string like "1 500 000 Ft", "50.000 eurónak megfelelő forintösszeg", or "nincs megadva" → HUF number or null
+ * Parse amount string like "1 500 000 Ft", "Legfeljebb 100 millió Ft",
+ * "50.000 eurónak megfelelő forintösszeg", or "nincs megadva" → HUF number or null.
  */
 export function parseKapAmountHuf(str: string | null): number | null {
   if (!str) return null
   const lower = str.toLowerCase().trim()
   if (lower === 'nincs megadva' || lower === '-' || lower === '') return null
+  if (lower.includes('%') && !lower.includes('ft') && !lower.includes('forint') && !lower.includes('eur')) {
+    return null
+  }
+  if (lower.includes('/hektár') || lower.includes('/ha') || lower.includes('/állat')) {
+    return null
+  }
+
+  // Handle "millió" / "milliárd" multipliers (e.g. "Legfeljebb 100 millió Ft", "1,5 milliárd Ft")
+  const normDecimal = lower.replace(/,/g, '.')
+  if (lower.includes('milliárd') || lower.includes('mrd')) {
+    const m = normDecimal.match(/(\d+(?:\.\d+)?)/)
+    if (m) {
+      const val = parseFloat(m[1])
+      if (!isNaN(val) && val > 0) {
+        const huf = Math.round(val * 1_000_000_000)
+        return lower.includes('eur') || lower.includes('€') ? huf * 400 : huf
+      }
+    }
+  }
+
+  if (lower.includes('millió')) {
+    const m = normDecimal.match(/(\d+(?:\.\d+)?)/)
+    if (m) {
+      const val = parseFloat(m[1])
+      if (!isNaN(val) && val > 0) {
+        const huf = Math.round(val * 1_000_000)
+        return lower.includes('eur') || lower.includes('€') ? huf * 400 : huf
+      }
+    }
+  }
 
   const cleaned = str.replace(/[^0-9]/g, '')
   const num = parseInt(cleaned, 10)
   if (isNaN(num) || num === 0) return null
 
-  // Convert EUR amounts (e.g. "50.000 eurónak megfelelő forintösszeg") to approximate HUF
-  if (lower.includes('eur') || lower.includes('€')) {
-    return num * 400
+  const result = lower.includes('eur') || lower.includes('€') ? num * 400 : num
+  return result >= 100_000 ? result : null
+}
+
+/**
+ * Extract structured fields from a KAP detail page (`https://kap.gov.hu/tamogatas/...`).
+ */
+export function parseKapDetailHtml(html: string): KapDetailInfo {
+  function extractRowValue(label: string): string | null {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(
+      `<div class="col-md-3">\\s*${escaped}\\s*<\\/div>\\s*<div class="col-md-9">([\\s\\S]*?)<\\/div>\\s*<\\/div>`,
+      'i',
+    )
+    const m = html.match(re)
+    if (!m) {
+      // Fallback for nested inner div inside col-md-9
+      const reNested = new RegExp(
+        `<div class="col-md-3">\\s*${escaped}\\s*<\\/div>\\s*<div class="col-md-9">([\\s\\S]*?)<\\/div>\\s*<\\/div>\\s*<\\/div>`,
+        'i',
+      )
+      const m2 = html.match(reNested)
+      if (!m2) return null
+      const cleaned = m2[1]
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&ndash;/gi, '–')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      return cleaned && cleaned !== '-' ? cleaned : null
+    }
+    const cleaned = m[1]
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&ndash;/gi, '–')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return cleaned && cleaned !== '-' ? cleaned : null
   }
 
-  return num
+  const goal = extractRowValue('Támogatás célja')
+  const beneficiaries = extractRowValue('Kedvezményezettek köre')
+  const conditions = extractRowValue('Támogatási feltételek')
+  const intensityText = extractRowValue('Támogatás mértéke')
+  const procedureType = extractRowValue('Eljárás típusa')
+  const budgetText = extractRowValue('Forrás összege')
+  const nextPhaseText = extractRowValue('Kérelem benyújtás következő szakasza')
+  const furtherPhasesText = extractRowValue('További benyújtási szakasz')
+
+  let intensityPct: number | null = null
+  if (intensityText) {
+    const pctMatch = intensityText.match(/(\d{1,3})\s*%/)
+    if (pctMatch) {
+      const n = parseInt(pctMatch[1], 10)
+      if (n > 0 && n <= 100) intensityPct = n
+    }
+  }
+
+  // Extract <time datetime="YYYY-MM-DD..."> from Kérelem benyújtás következő szakasza & További benyújtási szakasz
+  const timeMatches = [...html.matchAll(/<time\s+datetime="(\d{4}-\d{2}-\d{2})[^"]*"/gi)].map(
+    (m) => m[1],
+  )
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const futureDates = timeMatches.filter((d) => d >= todayIso)
+  const startDate = timeMatches[0] || null
+  // Only set a closing deadline on an active KAP call if there is a future phase end date;
+  // otherwise keep null so multi-phase active calls aren't auto-archived by past phase dates.
+  const endDate = futureDates.length > 0 ? futureDates[futureDates.length - 1] : null
+
+  return {
+    goal,
+    beneficiaries,
+    conditions,
+    intensityText,
+    intensityPct,
+    procedureType,
+    budgetText,
+    nextPhaseText,
+    furtherPhasesText,
+    startDate,
+    endDate,
+  }
+}
+
+async function fetchKapDetail(detailUrl: string): Promise<KapDetailInfo | null> {
+  try {
+    const resp = await fetch(`https://kap.gov.hu${detailUrl}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GrantRadar/1.0)' },
+    })
+    if (!resp.ok) return null
+    const html = await resp.text()
+    return parseKapDetailHtml(html)
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -140,7 +263,6 @@ async function fetchAllGrants(): Promise<ParsedKapCard[]> {
 
   const allDocs = [...firstDocs]
 
-  // Paginate through remaining pages (start=1 corresponds to offset 10)
   const totalPages = Math.ceil(total / 10)
   for (let page = 1; page <= totalPages; page++) {
     try {
@@ -165,7 +287,6 @@ async function fetchAllGrants(): Promise<ParsedKapCard[]> {
   }
 
   const parsed = allDocs.map(parseGrantCard)
-  // Deduplicate overlapping items across pages
   const seen = new Set<string>()
   const unique: ParsedKapCard[] = []
   for (const card of parsed) {
@@ -180,7 +301,7 @@ async function fetchAllGrants(): Promise<ParsedKapCard[]> {
 }
 
 /**
- * Main scraper: fetch all KAP grants via REST API and upsert.
+ * Main scraper: fetch all KAP grants via REST API + detail page HTML and upsert.
  */
 export async function scrapeKap() {
   const startTime = Date.now()
@@ -214,8 +335,6 @@ export async function scrapeKap() {
             ? 'CLOSED'
             : 'OPEN'
 
-        // If a grant closed or was suspended, transition any existing OPEN/FORTHCOMING record to CLOSED
-        // so users don't see closed calls as active AND future re-openings are properly detected.
         if (status === 'CLOSED') {
           if (grant.code) {
             const closedUpdate = await prisma.grant.updateMany({
@@ -238,20 +357,54 @@ export async function scrapeKap() {
           ? `https://kap.gov.hu${grant.detailUrl}`
           : 'https://kap.gov.hu'
 
+        const detail = grant.detailUrl ? await fetchKapDetail(grant.detailUrl) : null
+
+        const startDate = grant.startDate || detail?.startDate || undefined
+        const endDate = grant.endDate || detail?.endDate || undefined
+
+        const descParts: string[] = []
+        if (detail?.goal) {
+          descParts.push(detail.goal)
+        } else {
+          descParts.push(grant.title)
+        }
+        const metaParts = [
+          `Támogatási forma: ${grant.supportForm || 'VNT'}`,
+          'Program: KAP Stratégiai Terv',
+          detail?.budgetText ? `Keretösszeg: ${detail.budgetText}` : null,
+          detail?.intensityText ? `Támogatás mértéke: ${detail.intensityText}` : null,
+        ].filter(Boolean)
+        descParts.push(metaParts.join('. ') + '.')
+
+        const eligParts = [
+          detail?.beneficiaries ? `Kedvezményezettek köre: ${detail.beneficiaries}` : null,
+          detail?.conditions ? `Támogatási feltételek: ${detail.conditions}` : null,
+        ].filter(Boolean)
+
+        const stepParts = [
+          detail?.procedureType ? `Eljárás típusa: ${detail.procedureType}.` : null,
+          detail?.nextPhaseText ? `Következő benyújtási szakasz: ${detail.nextPhaseText}.` : null,
+          detail?.furtherPhasesText ? `További szakaszok: ${detail.furtherPhasesText}.` : null,
+          'Beadás a Magyar Államkincstár (MÁK) elektronikus felületén KNYR regisztrációval.',
+        ].filter(Boolean)
+
         await upsertGrant(source.id, {
           title: grant.title || grant.code || 'N/A',
           code: grant.code || grant.title?.slice(0, 40),
           program: 'Közös Agrárpolitika (KAP)',
           status,
           fundingType: mapFundingType(grant.supportForm),
-          deadline: grant.endDate || undefined,
-          openDate: grant.startDate || undefined,
+          deadline: endDate,
+          openDate: startDate,
           minAmountHuf: parseKapAmountHuf(grant.minAmount),
           maxAmountHuf: parseKapAmountHuf(grant.maxAmount),
-          supportIntensityPct: null,
+          supportIntensityPct: detail?.intensityPct ?? null,
           eligibleSizes: ['MICRO', 'SMALL', 'MEDIUM'],
           eligibleSectors: ['Mezőgazdaság', 'Agrár', 'Vidékfejlesztés', 'Élelmiszeripar'],
-          description: `${grant.title}. Támogatási forma: ${grant.supportForm || 'VNT'}. Program: KAP Stratégiai Terv.${grant.startDate && grant.endDate ? ` Beadási időszak: ${grant.startDate} – ${grant.endDate}.` : ''}`,
+          eligibleRegions: ['Országos (KAP célterület)'],
+          description: descParts.join('\n\n'),
+          eligibilityHu: eligParts.length > 0 ? eligParts.join(' ') : null,
+          applicationStepsHu: stepParts.join(' '),
           documentUrls: [],
           sourceUrl,
           externalId: grant.code || sourceUrl,
