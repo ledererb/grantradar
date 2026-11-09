@@ -18,9 +18,9 @@ export async function scrapeNffku() {
     where: { slug: SOURCE_SLUG },
     update: {},
     create: {
-      name: 'NFFKÜ (Modernizációs Alap)',
+      name: 'NEÜ / NFFKÜ (Modernizációs Alap)',
       slug: SOURCE_SLUG,
-      url: 'https://nffku.hu',
+      url: 'https://neuzrt.hu',
       country: 'HU',
       crawlMethod: 'FIRECRAWL_SCRAPE',
       cronSchedule: '0 3 * * 1',
@@ -29,7 +29,7 @@ export async function scrapeNffku() {
 
   try {
     console.log('[NFFKÜ] Scraping homepage...')
-    const doc = await scrapeGrantPage('https://nffku.hu')
+    const doc = await scrapeGrantPage('https://neuzrt.hu')
 
     if (!doc?.markdown || doc.markdown.length < 300) {
       await logCrawlRun(source.id, 'FAILED', { grantsFound: 0, grantsCreated: 0, grantsUpdated: 0, durationMs: Date.now() - startTime, errorMessage: 'Empty page' })
@@ -77,8 +77,8 @@ ${doc.markdown.slice(0, 15000)}`,
         if (grant.status?.toLowerCase().includes('archív')) continue
 
         const sourceUrl = grant.detailUrl?.startsWith('http') ? grant.detailUrl
-          : grant.detailUrl ? `https://nffku.hu${grant.detailUrl}`
-          : 'https://nffku.hu'
+          : grant.detailUrl ? `https://neuzrt.hu${grant.detailUrl.startsWith('/') ? '' : '/'}${grant.detailUrl}`
+          : 'https://neuzrt.hu'
 
         await upsertGrant(source.id, {
           title: grant.title || grant.code,
@@ -90,7 +90,7 @@ ${doc.markdown.slice(0, 15000)}`,
           minAmountHuf: null,
           maxAmountHuf: null,
           supportIntensityPct: null,
-          eligibleSizes: ['MICRO', 'SMALL', 'MEDIUM', 'LARGE'],
+          eligibleSizes: ['MICRO', 'SMALL', 'MEDIUM'],
           eligibleSectors: ['Energia', 'Megújuló', 'Klíma', 'Környezetvédelem'],
           description: grant.description || '',
           documentUrls: [],

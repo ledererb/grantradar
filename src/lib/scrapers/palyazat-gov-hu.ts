@@ -5,11 +5,22 @@ const SOURCE_SLUG = 'palyazat-gov-hu'
 // Aktív status GUID (stable UUID from palyazat.gov.hu's filter system)
 const ACTIVE_STATUS_GUID = 'b2111a67-2c8c-49c9-abdc-01ee1abb1814'
 const BASE_URL = `https://www.palyazat.gov.hu/palyazatok/palyazatkereso?palyazatStatusza=${ACTIVE_STATUS_GUID}`
+const FAIR_API_BASE = 'https://ginapp-api.fair.gov.hu'
+
+const HUNGARIAN_REGIONS = [
+  'Közép-Magyarország',
+  'Budapest',
+  'Pest',
+  'Közép-Dunántúl',
+  'Nyugat-Dunántúl',
+  'Dél-Dunántúl',
+  'Észak-Magyarország',
+  'Észak-Alföld',
+  'Dél-Alföld',
+]
 
 /**
- * Tender data structure from palyazat.gov.hu's embedded __NEXT_DATA__ payload.
- * The site is a Next.js app that serializes its Redux store (tendersApiSlice)
- * into the initial HTML, giving us clean structured JSON for free.
+ * Tender data structure from palyazat.gov.hu / ginapp-api.fair.gov.hu.
  */
 interface PalyazatTender {
   code: string
@@ -18,8 +29,8 @@ interface PalyazatTender {
   status: string
   minSupportAmount: number
   maxSupportAmount: number
-  startTime: string    // ISO date
-  endTime: string      // ISO date
+  startTime: string // ISO date
+  endTime: string // ISO date
   formOfSupport: string
   rateOfSupport: number
   developmentalProgram: string
@@ -28,6 +39,7 @@ interface PalyazatTender {
   beneficiaries: string[]
   supportPurpose?: string
   conditionsOfSupport?: string
+  wayOfAcquiringSupport?: { id?: string; name?: string }
   sumAvailableSupportAmount?: number
   sumRequestedSupportAmount?: number
   modificationTime?: string
@@ -35,10 +47,54 @@ interface PalyazatTender {
 }
 
 /**
- * Fetch one page of active grants from palyazat.gov.hu.
- * Parses the __NEXT_DATA__ script tag to extract the Redux store.
+ * Fetch active tenders directly from the official FairApp JSON API (`ginapp-api.fair.gov.hu`).
  */
-async function fetchPage(page: number): Promise<{ tenders: PalyazatTender[], totalCount: number }> {
+async function fetchViaDirectApi(): Promise<PalyazatTender[]> {
+  const all: PalyazatTender[] = []
+  const pageSize = 100
+  let pageIndex = 0
+  let totalCount = Infinity
+
+  while (all.length < totalCount && pageIndex < 20) {
+    const resp = await fetch(`${FAIR_API_BASE}/papi/tenders/list`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'application-name': 'FairApp',
+        'device-id': '40b0c32c-77fe-4380-9f5e-be96ae24fabd',
+      },
+      body: JSON.stringify({
+        filtering: {
+          exactFilters: [{ selected: [ACTIVE_STATUS_GUID], type: 'Status' }],
+        },
+        pagination: { pageIndex, pageSize },
+        sort: { direction: 'desc', field: 'endTime' },
+      }),
+    })
+
+    if (!resp.ok) {
+      throw new Error(`FairApp API returned HTTP ${resp.status}`)
+    }
+
+    const data = (await resp.json()) as {
+      tenders?: PalyazatTender[]
+      pagination?: { totalCount?: number }
+    }
+    const tenders = data.tenders || []
+    totalCount = data.pagination?.totalCount ?? tenders.length
+    if (tenders.length === 0) break
+
+    all.push(...tenders)
+    pageIndex++
+  }
+
+  return all
+}
+
+/**
+ * Fallback: Fetch one page of active grants from palyazat.gov.hu HTML `__NEXT_DATA__`.
+ */
+async function fetchPage(page: number): Promise<{ tenders: PalyazatTender[]; totalCount: number }> {
   const url = `${BASE_URL}&page=${page}`
   const resp = await fetch(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GrantRadar/1.0)' },
@@ -48,7 +104,6 @@ async function fetchPage(page: number): Promise<{ tenders: PalyazatTender[], tot
 
   const html = await resp.text()
 
-  // Extract __NEXT_DATA__ JSON using indexOf (regex escaping is fragile across build targets)
   const startMarker = '<script id="__NEXT_DATA__" type="application/json">'
   const endMarker = '</script>'
   const startIdx = html.indexOf(startMarker)
@@ -61,11 +116,10 @@ async function fetchPage(page: number): Promise<{ tenders: PalyazatTender[], tot
   const nextData = JSON.parse(jsonStr)
   const initialState = JSON.parse(nextData.props?.pageProps?.initialState || '{}')
 
-  // Find the getTenders query result in the Redux store
   const queries = initialState.tendersApiSlice?.queries || {}
   for (const [key, val] of Object.entries(queries)) {
     if (key.includes('getTenders')) {
-      const data = (val as { data?: { tenders: PalyazatTender[], pagination: { totalCount: number } } }).data
+      const data = (val as { data?: { tenders: PalyazatTender[]; pagination: { totalCount: number } } }).data
       if (data) {
         return {
           tenders: data.tenders || [],
@@ -79,11 +133,21 @@ async function fetchPage(page: number): Promise<{ tenders: PalyazatTender[], tot
 }
 
 /**
- * Fetch ALL active grants across all pages.
+ * Fetch ALL active grants across all pages (prefers direct JSON API, falls back to __NEXT_DATA__).
  */
 async function fetchAllActiveTenders(): Promise<PalyazatTender[]> {
+  try {
+    const directTenders = await fetchViaDirectApi()
+    if (directTenders.length > 0) {
+      console.log(`[palyazat.gov.hu] Direct FairApp API returned ${directTenders.length} active grants`)
+      return directTenders
+    }
+  } catch (err) {
+    console.warn('[palyazat.gov.hu] Direct API failed, falling back to __NEXT_DATA__:', err)
+  }
+
   const { tenders: firstPage, totalCount } = await fetchPage(1)
-  console.log(`[palyazat.gov.hu] API: ${totalCount} total active grants`)
+  console.log(`[palyazat.gov.hu] __NEXT_DATA__: ${totalCount} total active grants`)
 
   const all: PalyazatTender[] = [...firstPage]
   const totalPages = Math.ceil(totalCount / 10)
@@ -93,7 +157,6 @@ async function fetchAllActiveTenders(): Promise<PalyazatTender[]> {
       const { tenders } = await fetchPage(page)
       if (tenders.length === 0) break
       all.push(...tenders)
-      console.log(`[palyazat.gov.hu] Page ${page}: +${tenders.length} (total: ${all.length})`)
     } catch (err) {
       console.error(`[palyazat.gov.hu] Page ${page} failed:`, err)
       break
@@ -107,7 +170,7 @@ async function fetchAllActiveTenders(): Promise<PalyazatTender[]> {
  * Map support form string to our FundingType enum.
  */
 function mapFundingType(form: string): string {
-  const f = form.toLowerCase()
+  const f = (form || '').toLowerCase()
   if (f.includes('hitel') || f.includes('pénzügyi eszköz')) return 'LOAN'
   if (f.includes('garancia')) return 'GUARANTEE'
   if (f.includes('visszatérítendő') && !f.includes('nem')) return 'LOAN'
@@ -119,21 +182,49 @@ function mapFundingType(form: string): string {
  * Check if a tender is relevant for businesses or agricultural enterprises (SMB & Agri filter).
  */
 function isBusinessRelevant(tender: PalyazatTender): boolean {
-  const allCats = [...tender.beneficiaries, ...tender.categories].map(s => s.toLowerCase())
+  const allCats = [...(tender.beneficiaries || []), ...(tender.categories || [])].map((s) => s.toLowerCase())
   if (allCats.length === 0) return true
 
-  // Must have at least one business-type or agricultural beneficiary
   const businessTerms = [
-    'vállalkozás', 'kkv', 'mikro', 'kis- és közepes', 'gazdasági társaság',
-    'egyéni vállalkozó', 'őstermelő', 'mezőgazdasági', 'szövetkezet', 'termelő',
+    'vállalkozás',
+    'kkv',
+    'mikro',
+    'kis- és közepes',
+    'gazdasági társaság',
+    'egyéni vállalkozó',
+    'őstermelő',
+    'mezőgazdasági',
+    'szövetkezet',
+    'termelő',
   ]
-  return allCats.some(cat => businessTerms.some(term => cat.includes(term)))
+  return allCats.some((cat) => businessTerms.some((term) => cat.includes(term)))
 }
 
 /**
- * Build the detail page URL from tender metadata.
+ * Resolve the canonical /programok/... detail page URL via FairApp API,
+ * falling back to the /palyazatok/redirect URL if unavailable.
  */
-function buildDetailUrl(tender: PalyazatTender): string {
+async function resolveDetailUrl(tender: PalyazatTender): Promise<string> {
+  if (tender.code) {
+    try {
+      const resp = await fetch(
+        `${FAIR_API_BASE}/operational-map/call-for-applications-route?code=${encodeURIComponent(tender.code)}`,
+      )
+      if (resp.ok) {
+        const data = (await resp.json()) as { route?: string }
+        if (data?.route) {
+          const segments = data.route.split('/')
+          if (segments.length === 4) {
+            segments.splice(2, 1)
+          }
+          return `https://www.palyazat.gov.hu/programok/${segments.join('/')}`
+        }
+      }
+    } catch {
+      // Fall back to redirect URL below
+    }
+  }
+
   const program = encodeURIComponent(tender.developmentalProgram || '')
   const op = encodeURIComponent(tender.operationalProgram || '')
   const code = encodeURIComponent(tender.code || '')
@@ -144,7 +235,7 @@ function buildDetailUrl(tender: PalyazatTender): string {
  * Extract eligible company sizes from beneficiaries/categories.
  */
 function extractSizes(tender: PalyazatTender): string[] {
-  const text = [...tender.beneficiaries, ...tender.categories].join(' ').toLowerCase()
+  const text = [...(tender.beneficiaries || []), ...(tender.categories || [])].join(' ').toLowerCase()
   const sizes: string[] = []
   if (text.includes('mikro') || text.includes('vállalkozás')) sizes.push('MICRO')
   if (text.includes('kis') || text.includes('vállalkozás')) sizes.push('SMALL')
@@ -153,26 +244,43 @@ function extractSizes(tender: PalyazatTender): string[] {
 }
 
 /**
+ * Extract Hungarian NUTS-2 regions from tender.categories.
+ */
+function extractRegions(tender: PalyazatTender): string[] {
+  const regions: string[] = []
+  for (const cat of tender.categories || []) {
+    for (const region of HUNGARIAN_REGIONS) {
+      if (cat.toLowerCase() === region.toLowerCase() && !regions.includes(region)) {
+        regions.push(region)
+      }
+    }
+  }
+  return regions
+}
+
+/**
  * Extract sector tags from categories.
  */
 function extractSectors(tender: PalyazatTender): string[] {
   const sectors: string[] = []
-  const cats = tender.categories.map(c => c.toLowerCase())
+  const cats = (tender.categories || []).map((c) => c.toLowerCase())
 
   const sectorMap: Record<string, string> = {
-    'energia': 'Energia',
-    'digitalizáció': 'Digitalizáció',
-    'közlekedés': 'Közlekedés',
-    'egészség': 'Egészségügy',
+    energia: 'Energia',
+    digitalizáció: 'Digitalizáció',
+    infokommunikáció: 'IT & Digitalizáció',
+    információs: 'IT & Digitalizáció',
+    közlekedés: 'Közlekedés',
+    egészség: 'Egészségügy',
     'k+f': 'Kutatás-fejlesztés',
-    'innováció': 'Innováció',
-    'turisztika': 'Turizmus',
-    'élelmiszeripar': 'Élelmiszeripar',
-    'mezőgazdaság': 'Mezőgazdaság',
-    'környezetvédelem': 'Környezetvédelem',
-    'foglalkoztatás': 'Foglalkoztatás',
-    'képzés': 'Képzés',
-    'vállalkozás': 'Vállalkozásfejlesztés',
+    innováció: 'Innováció',
+    turisztika: 'Turizmus',
+    élelmiszeripar: 'Élelmiszeripar',
+    mezőgazdaság: 'Mezőgazdaság',
+    környezetvédelem: 'Környezetvédelem',
+    foglalkoztatás: 'Foglalkoztatás',
+    képzés: 'Képzés',
+    vállalkozás: 'Vállalkozásfejlesztés',
   }
 
   for (const cat of cats) {
@@ -183,16 +291,66 @@ function extractSectors(tender: PalyazatTender): string[] {
     }
   }
 
-  // Add program as sector if nothing else matched
-  if (sectors.length === 0 && tender.supportPurpose) {
-    sectors.push(tender.supportPurpose.slice(0, 50))
-  }
-
   return sectors
 }
 
 /**
- * Main scraper: fetch all active grants from palyazat.gov.hu via __NEXT_DATA__.
+ * Build rich Hungarian description from structured FairApp tender fields.
+ */
+function buildDescription(tender: PalyazatTender): string {
+  const parts: string[] = []
+  if (tender.supportPurpose && tender.supportPurpose.trim().length > 20) {
+    parts.push(tender.supportPurpose.trim())
+  } else {
+    parts.push(tender.name)
+  }
+
+  const metaParts: string[] = []
+  if (tender.formOfSupport) metaParts.push(`Támogatási forma: ${tender.formOfSupport}`)
+  if (tender.developmentalProgram || tender.operationalProgram) {
+    metaParts.push(
+      `Program: ${[tender.developmentalProgram, tender.operationalProgram].filter(Boolean).join(' / ')}`,
+    )
+  }
+  if (tender.rateOfSupport) metaParts.push(`Max. támogatási intenzitás: ${tender.rateOfSupport}%`)
+  if (tender.wayOfAcquiringSupport?.name) {
+    metaParts.push(`Eljárásrend: ${tender.wayOfAcquiringSupport.name}`)
+  }
+  if (tender.sumAvailableSupportAmount && tender.sumAvailableSupportAmount > 0) {
+    const mrd = (tender.sumAvailableSupportAmount / 1_000_000_000).toFixed(2)
+    metaParts.push(`Keretösszeg: ${mrd} Mrd Ft`)
+  }
+
+  if (metaParts.length > 0) {
+    parts.push(metaParts.join('. ') + '.')
+  }
+
+  return parts.join('\n\n')
+}
+
+/**
+ * Build initial eligibility summary from FairApp tender fields.
+ */
+function buildEligibility(tender: PalyazatTender, regions: string[]): string | null {
+  const lines: string[] = []
+  if (tender.beneficiaries && tender.beneficiaries.length > 0) {
+    lines.push(`Pályázók köre: ${tender.beneficiaries.join(', ')}.`)
+  }
+  if (regions.length > 0) {
+    lines.push(`Támogatott régiók: ${regions.join(', ')}.`)
+  }
+  if (
+    tender.conditionsOfSupport &&
+    tender.conditionsOfSupport.trim() &&
+    !tender.conditionsOfSupport.toLowerCase().includes('részletek a felhívásban')
+  ) {
+    lines.push(`Feltételek: ${tender.conditionsOfSupport.trim()}`)
+  }
+  return lines.length > 0 ? lines.join(' ') : null
+}
+
+/**
+ * Main scraper: fetch all active grants from palyazat.gov.hu via FairApp API / __NEXT_DATA__.
  * Zero Firecrawl cost, zero GPT cost — pure HTTP + JSON parsing.
  */
 export async function scrapePalyazatGovHu() {
@@ -223,7 +381,8 @@ export async function scrapePalyazatGovHu() {
         grantsFound++
         if (!isBusinessRelevant(tender)) continue
 
-        const sourceUrl = buildDetailUrl(tender)
+        const sourceUrl = await resolveDetailUrl(tender)
+        const regions = extractRegions(tender)
 
         await upsertGrant(source.id, {
           title: tender.name,
@@ -233,12 +392,17 @@ export async function scrapePalyazatGovHu() {
           fundingType: mapFundingType(tender.formOfSupport),
           deadline: tender.endTime?.slice(0, 10) || null,
           openDate: tender.startTime?.slice(0, 10) || null,
-          minAmountHuf: tender.minSupportAmount || null,
-          maxAmountHuf: tender.maxSupportAmount || null,
+          minAmountHuf: tender.minSupportAmount > 1 ? tender.minSupportAmount : null,
+          maxAmountHuf: tender.maxSupportAmount > 0 ? tender.maxSupportAmount : null,
           supportIntensityPct: tender.rateOfSupport || null,
           eligibleSizes: extractSizes(tender),
           eligibleSectors: extractSectors(tender),
-          description: `${tender.name}. Támogatási forma: ${tender.formOfSupport}. Program: ${tender.developmentalProgram} / ${tender.operationalProgram}. Támogatási intenzitás: ${tender.rateOfSupport}%.`,
+          eligibleRegions: regions,
+          description: buildDescription(tender),
+          eligibilityHu: buildEligibility(tender, regions),
+          applicationStepsHu: tender.wayOfAcquiringSupport?.name
+            ? `Eljárásrend: ${tender.wayOfAcquiringSupport.name}. Beadás a Fair (palyazat.gov.hu) EPTK felületén ügyfélkapus / cégkapus azonosítással.`
+            : null,
           documentUrls: [],
           sourceUrl,
           externalId: tender.code || tender.id || sourceUrl,
@@ -253,17 +417,23 @@ export async function scrapePalyazatGovHu() {
 
     const durationMs = Date.now() - startTime
     await logCrawlRun(source.id, 'SUCCESS', {
-      grantsFound, grantsCreated, grantsUpdated, durationMs,
+      grantsFound,
+      grantsCreated,
+      grantsUpdated,
+      durationMs,
     })
 
     console.log(`[palyazat.gov.hu] Done. Found: ${grantsFound}, Business-relevant: ${grantsCreated}. ${durationMs}ms`)
     return { success: true, grantsFound, grantsCreated }
-
   } catch (error) {
     const durationMs = Date.now() - startTime
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     await logCrawlRun(source.id, 'FAILED', {
-      grantsFound, grantsCreated, grantsUpdated, durationMs, errorMessage,
+      grantsFound,
+      grantsCreated,
+      grantsUpdated,
+      durationMs,
+      errorMessage,
     })
     console.error('[palyazat.gov.hu] Fatal error:', error)
     return { success: false, error: errorMessage }

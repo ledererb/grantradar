@@ -1,9 +1,9 @@
 import { prisma } from '@/lib/db'
-import { scrapeGrantPage, crawlGrantSite } from '@/lib/firecrawl'
 import type { GrantStatus, FundingType, CompanySize } from '@prisma/client'
 
-interface RawGrantData {
+export interface RawGrantData {
   title?: string
+  titleEn?: string
   code?: string
   program?: string
   status?: string
@@ -12,10 +12,16 @@ interface RawGrantData {
   openDate?: string | null
   minAmountHuf?: number | null
   maxAmountHuf?: number | null
+  minAmountEur?: number | null
+  maxAmountEur?: number | null
   supportIntensityPct?: number | null
   eligibleSizes?: string[]
   eligibleSectors?: string[]
+  eligibleRegions?: string[]
   description?: string
+  descriptionEn?: string
+  eligibilityHu?: string | null
+  applicationStepsHu?: string | null
   documentUrls?: string[]
   sourceUrl: string
   /**
@@ -34,7 +40,7 @@ function normaliseStatus(raw?: string): GrantStatus {
   const lower = raw.toLowerCase()
   if (lower.includes('nyitott') || lower.includes('open') || lower.includes('aktív')) return 'OPEN'
   if (lower.includes('hamarosan') || lower.includes('forthcoming') || lower.includes('tervezett')) return 'FORTHCOMING'
-  if (lower.includes('lezárt') || lower.includes('closed') || lower.includes('zárult')) return 'CLOSED'
+  if (lower.includes('lezárt') || lower.includes('closed') || lower.includes('zárult') || lower.includes('felfüggeszt')) return 'CLOSED'
   if (lower.includes('archív') || lower.includes('archived')) return 'ARCHIVED'
   return 'OPEN'
 }
@@ -47,9 +53,9 @@ function normaliseSizes(raw?: string[]): CompanySize[] {
   const result: CompanySize[] = []
   for (const s of raw) {
     const lower = s.toLowerCase()
-    if (lower.includes('mikro') || lower.includes('micro')) result.push('MICRO')
-    if (lower.includes('kis') || lower.includes('small')) result.push('SMALL')
-    if (lower.includes('közép') || lower.includes('medium') || lower.includes('közepes')) result.push('MEDIUM')
+    if ((lower.includes('mikro') || lower.includes('micro')) && !result.includes('MICRO')) result.push('MICRO')
+    if ((lower.includes('kis') || lower.includes('small')) && !result.includes('SMALL')) result.push('SMALL')
+    if ((lower.includes('közép') || lower.includes('medium') || lower.includes('közepes')) && !result.includes('MEDIUM')) result.push('MEDIUM')
   }
   return result.length > 0 ? result : ['MICRO', 'SMALL', 'MEDIUM']
 }
@@ -60,7 +66,7 @@ function normaliseSizes(raw?: string[]): CompanySize[] {
 function normaliseFundingType(raw?: string): FundingType {
   if (!raw) return 'GRANT'
   const lower = raw.toLowerCase()
-  if (lower.includes('loan') || lower.includes('hitel')) return 'LOAN'
+  if (lower.includes('loan') || lower.includes('hitel') || lower.includes('pénzügyi eszköz')) return 'LOAN'
   if (lower.includes('guarantee') || lower.includes('garancia')) return 'GUARANTEE'
   if (lower.includes('mixed') || lower.includes('vegyes') || lower.includes('kombinált')) return 'MIXED'
   return 'GRANT'
@@ -116,44 +122,93 @@ function resolveExternalId(sourceId: string, data: RawGrantData): string {
 }
 
 /**
- * Upsert a grant into the database. 
+ * Upsert a grant into the database.
  * Uses sourceId + externalId for deduplication.
+ * Preserves deep-scraped fields (`descriptionHu`, `eligibilityHu`, `applicationStepsHu`,
+ * `eligibleRegions`) on routine re-scrapes unless the grant is re-opening.
  */
 export async function upsertGrant(sourceId: string, data: RawGrantData) {
   const externalId = resolveExternalId(sourceId, data)
 
   const grantData = {
     titleHu: data.title || null,
+    titleEn: data.titleEn || null,
     code: data.code || null,
     program: data.program || null,
     status: normaliseStatus(data.status),
-    fundingType: (normaliseFundingType(data.fundingType)) as FundingType,
+    fundingType: normaliseFundingType(data.fundingType) as FundingType,
     deadline: parseDate(data.deadline),
     openDate: parseDate(data.openDate),
-    minAmountHuf: data.minAmountHuf ? BigInt(data.minAmountHuf) : null,
-    maxAmountHuf: data.maxAmountHuf ? BigInt(data.maxAmountHuf) : null,
-    supportIntensityPct: data.supportIntensityPct || null,
+    minAmountHuf: data.minAmountHuf ? BigInt(Math.round(data.minAmountHuf)) : null,
+    maxAmountHuf: data.maxAmountHuf ? BigInt(Math.round(data.maxAmountHuf)) : null,
+    minAmountEur: data.minAmountEur ?? null,
+    maxAmountEur: data.maxAmountEur ?? null,
+    supportIntensityPct: data.supportIntensityPct ?? null,
     eligibleSizes: normaliseSizes(data.eligibleSizes),
     eligibleSectors: data.eligibleSectors || [],
-    eligibleRegions: [],
+    eligibleRegions: data.eligibleRegions || [],
     descriptionHu: data.description || null,
+    descriptionEn: data.descriptionEn || null,
+    eligibilityHu: data.eligibilityHu || null,
+    applicationStepsHu: data.applicationStepsHu || null,
     documentUrls: data.documentUrls || [],
     sourceUrl: data.sourceUrl,
     lastScrapedAt: new Date(),
   }
 
-  // Check for re-opening: existing CLOSED grant becoming OPEN again
+  // Check existing grant state for re-opening and deep-scrape preservation
   const existing = await prisma.grant.findUnique({
     where: { sourceId_externalId: { sourceId, externalId } },
-    select: { status: true },
+    select: {
+      status: true,
+      detailScrapedAt: true,
+      descriptionHu: true,
+      eligibilityHu: true,
+      applicationStepsHu: true,
+      eligibleRegions: true,
+    },
   })
 
-  const isReopening = existing
-    && (existing.status === 'CLOSED' || existing.status === 'ARCHIVED')
-    && (grantData.status === 'OPEN' || grantData.status === 'FORTHCOMING')
+  const isReopening =
+    existing &&
+    (existing.status === 'CLOSED' || existing.status === 'ARCHIVED') &&
+    (grantData.status === 'OPEN' || grantData.status === 'FORTHCOMING')
 
   if (isReopening) {
     console.log(`[Upsert] 🔄 Re-opening detected: ${data.code || externalId}`)
+  }
+
+  // If the grant was already deep-scraped and is not re-opening, do not overwrite
+  // richer deep-scraped text/regions with shorter list-level stubs.
+  const preserveDeepScrape = Boolean(existing?.detailScrapedAt && !isReopening)
+
+  const updatePayload = {
+    ...grantData,
+    descriptionHu:
+      preserveDeepScrape &&
+      existing?.descriptionHu &&
+      existing.descriptionHu.length > (grantData.descriptionHu?.length || 0)
+        ? existing.descriptionHu
+        : grantData.descriptionHu,
+    eligibilityHu:
+      preserveDeepScrape && existing?.eligibilityHu
+        ? existing.eligibilityHu
+        : grantData.eligibilityHu ?? existing?.eligibilityHu ?? null,
+    applicationStepsHu:
+      preserveDeepScrape && existing?.applicationStepsHu
+        ? existing.applicationStepsHu
+        : grantData.applicationStepsHu ?? existing?.applicationStepsHu ?? null,
+    eligibleRegions:
+      grantData.eligibleRegions.length > 0
+        ? grantData.eligibleRegions
+        : existing?.eligibleRegions ?? [],
+    updatedAt: new Date(),
+    ...(isReopening
+      ? {
+          reopenedAt: new Date(),
+          detailScrapedAt: null, // Re-scrape detail page for fresh data
+        }
+      : {}),
   }
 
   const grant = await prisma.grant.upsert({
@@ -163,14 +218,7 @@ export async function upsertGrant(sourceId: string, data: RawGrantData) {
         externalId,
       },
     },
-    update: {
-      ...grantData,
-      updatedAt: new Date(),
-      ...(isReopening ? {
-        reopenedAt: new Date(),
-        detailScrapedAt: null,  // Re-scrape detail page for fresh data
-      } : {}),
-    },
+    update: updatePayload,
     create: {
       sourceId,
       externalId,
@@ -193,7 +241,7 @@ export async function logCrawlRun(
     grantsUpdated: number
     durationMs: number
     errorMessage?: string
-  }
+  },
 ) {
   await prisma.crawlLog.create({
     data: {

@@ -182,7 +182,7 @@ export const SCRAPERS: Record<string, ScraperConfig> = {
     slug: 'nkfih',
     name: 'NKFIH',
     url: 'https://nkfih.gov.hu',
-    scrapeUrl: 'https://nkfih.gov.hu/palyazatok/aktualis-felhivasok',
+    scrapeUrl: 'https://nkfih.gov.hu/palyazoknak/palyazatok/aktualis-felhivasok',
     country: 'HU',
     crawlMethod: 'FIRECRAWL_SCRAPE',
     extractionPrompt: `${EXTRACTION_PROMPT_BASE}

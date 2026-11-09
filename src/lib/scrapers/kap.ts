@@ -16,12 +16,7 @@ interface KapSearchResponse {
   }
 }
 
-/**
- * Parse a single grant card HTML snippet from the KAP REST API.
- * Each doc is a raw HTML string like:
- *   <div class="pbitem"><div class="pbtitle">Title - KAP-RD01-1-25</div>...
- */
-function parseGrantCard(html: string): {
+export interface ParsedKapCard {
   code: string | null
   title: string
   status: 'Aktív' | 'Lezárult' | 'Felfüggesztve' | null
@@ -31,26 +26,35 @@ function parseGrantCard(html: string): {
   supportForm: string | null
   startDate: string | null
   endDate: string | null
-} {
+}
+
+/**
+ * Parse a single grant card HTML snippet from the KAP REST API.
+ * Each doc is a raw HTML string like:
+ *   <div class="pbitem"><div class="pbtitle">Title - KAP-RD01-1-25</div>...
+ */
+export function parseGrantCard(html: string): ParsedKapCard {
   // Title: <div class="pbtitle">Erdőtelepítés - KAP-RD38-RD39-1-25</div>
-  const titleMatch = html.match(/pbtitle">(.*?)</)
+  const titleMatch = html.match(/pbtitle">\s*(.*?)\s*</)
   const rawTitle = titleMatch?.[1]?.trim() || ''
 
   // Code: KAP-RDxx-xx-xx pattern
-  const codeMatch = rawTitle.match(/(KAP-[A-Za-z0-9-]+)/)
+  const codeMatch = rawTitle.match(/(KAP-[A-Za-z0-9_-]+)/)
   const code = codeMatch?.[1] || null
 
   // Clean title: remove the code suffix
   const title = code
-    ? rawTitle.replace(` - ${code}`, '').replace(code, '').trim()
+    ? rawTitle.replace(/\s*-\s*KAP-[A-Za-z0-9_-]+$/, '').replace(code, '').trim()
     : rawTitle
 
   // Status: Aktív / Lezárult / Felfüggesztve
   const statusMatch = html.match(/(Aktív|Lezárult|Felfüggesztve)/)
-  const status = statusMatch?.[1] as 'Aktív' | 'Lezárult' | 'Felfüggesztve' | null
+  const status = (statusMatch?.[1] as 'Aktív' | 'Lezárult' | 'Felfüggesztve') || null
 
-  // Detail URL: href="/tamogatas/kap-rd38-rd39-1-25"
-  const urlMatch = html.match(/href="(\/tamogatas\/[^"]+)"/)
+  // Detail URL: either <a href="/tamogatas/..."> or onclick="window.open('/tamogatas/...', '_self');"
+  const urlMatch =
+    html.match(/href="(\/tamogatas\/[^"]+)"/) ||
+    html.match(/window\.open\(['"](\/tamogatas\/[^'"]+)['"]/)
   const detailUrl = urlMatch?.[1] || null
 
   // Min amount: after "Támogatás minimum összege</label>"
@@ -65,8 +69,10 @@ function parseGrantCard(html: string): {
   const formMatch = html.match(/formája<\/label>([^<]+)/)
   const supportForm = formMatch?.[1]?.trim() || null
 
-  // Dates: "2025-01-27 → 2025-03-13" pattern
-  const dateMatch = html.match(/(\d{4}-\d{2}-\d{2})\s*→\s*(\d{4}-\d{2}-\d{2})/)
+  // Dates: "2025-01-27 <img src="/themes/kap/images/arrow.png"> 2025-03-13" or "2025-01-27 → 2025-03-13"
+  const dateMatch = html.match(
+    /(\d{4}-\d{2}-\d{2})\s*(?:→|<img[^>]*>)\s*(\d{4}-\d{2}-\d{2})/i,
+  )
   const startDate = dateMatch?.[1] || null
   const endDate = dateMatch?.[2] || null
 
@@ -74,13 +80,23 @@ function parseGrantCard(html: string): {
 }
 
 /**
- * Parse amount string like "1 500 000 Ft" or "nincs megadva" → number or null
+ * Parse amount string like "1 500 000 Ft", "50.000 eurónak megfelelő forintösszeg", or "nincs megadva" → HUF number or null
  */
-function parseAmount(str: string | null): number | null {
-  if (!str || str === 'nincs megadva' || str === '-') return null
+export function parseKapAmountHuf(str: string | null): number | null {
+  if (!str) return null
+  const lower = str.toLowerCase().trim()
+  if (lower === 'nincs megadva' || lower === '-' || lower === '') return null
+
   const cleaned = str.replace(/[^0-9]/g, '')
   const num = parseInt(cleaned, 10)
-  return isNaN(num) || num === 0 ? null : num
+  if (isNaN(num) || num === 0) return null
+
+  // Convert EUR amounts (e.g. "50.000 eurónak megfelelő forintösszeg") to approximate HUF
+  if (lower.includes('eur') || lower.includes('€')) {
+    return num * 400
+  }
+
+  return num
 }
 
 /**
@@ -96,12 +112,17 @@ function mapFundingType(form: string | null): string {
 }
 
 /**
- * Fetch all grants from the KAP REST API (paginated, 11 per page).
+ * Fetch all grants from the KAP REST API (search returns start=0, paginate uses start=1..N).
  */
-async function fetchAllGrants(): Promise<ReturnType<typeof parseGrantCard>[]> {
-  // Initial search — empty query returns all grants
+async function fetchAllGrants(): Promise<ParsedKapCard[]> {
   const searchBody = JSON.stringify({
-    search: '', kk: '0', tf: '0', fc: '0', tm: null, st: '', order: 'desc'
+    search: '',
+    kk: '0',
+    tf: '0',
+    fc: '0',
+    tm: null,
+    st: '',
+    order: 'desc',
   })
 
   const searchResp = await fetch(SEARCH_URL, {
@@ -119,9 +140,9 @@ async function fetchAllGrants(): Promise<ReturnType<typeof parseGrantCard>[]> {
 
   const allDocs = [...firstDocs]
 
-  // Paginate through remaining pages
-  const totalPages = Math.ceil(total / 11)
-  for (let page = 2; page <= totalPages; page++) {
+  // Paginate through remaining pages (start=1 corresponds to offset 10)
+  const totalPages = Math.ceil(total / 10)
+  for (let page = 1; page <= totalPages; page++) {
     try {
       const pageResp = await fetch(PAGINATE_URL, {
         method: 'POST',
@@ -132,6 +153,7 @@ async function fetchAllGrants(): Promise<ReturnType<typeof parseGrantCard>[]> {
       if (!pageResp.ok) break
 
       const pageData: KapSearchResponse = await pageResp.json()
+      if (!pageData.ok) break
       const docs = pageData.data?.docs || []
       if (docs.length === 0) break
 
@@ -142,8 +164,19 @@ async function fetchAllGrants(): Promise<ReturnType<typeof parseGrantCard>[]> {
     }
   }
 
-  console.log(`[KAP] Collected ${allDocs.length} grant cards`)
-  return allDocs.map(parseGrantCard)
+  const parsed = allDocs.map(parseGrantCard)
+  // Deduplicate overlapping items across pages
+  const seen = new Set<string>()
+  const unique: ParsedKapCard[] = []
+  for (const card of parsed) {
+    const key = card.code || card.detailUrl || card.title
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    unique.push(card)
+  }
+
+  console.log(`[KAP] Collected ${unique.length} unique grant cards`)
+  return unique
 }
 
 /**
@@ -153,6 +186,7 @@ export async function scrapeKap() {
   const startTime = Date.now()
   let grantsFound = 0
   let grantsCreated = 0
+  let grantsUpdated = 0
 
   const source = await prisma.source.upsert({
     where: { slug: SOURCE_SLUG },
@@ -175,13 +209,30 @@ export async function scrapeKap() {
         if (!grant.code && !grant.title) continue
         grantsFound++
 
-        // Map status — store all including closed for re-opening tracking
-        const status = grant.status === 'Lezárult' ? 'CLOSED'
-          : grant.status === 'Felfüggesztve' ? 'CLOSED'
-          : 'OPEN'
+        const status =
+          grant.status === 'Lezárult' || grant.status === 'Felfüggesztve'
+            ? 'CLOSED'
+            : 'OPEN'
 
-        // Skip closed grants (re-opening detection handled by upsert if they reopen)
-        if (status === 'CLOSED') continue
+        // If a grant closed or was suspended, transition any existing OPEN/FORTHCOMING record to CLOSED
+        // so users don't see closed calls as active AND future re-openings are properly detected.
+        if (status === 'CLOSED') {
+          if (grant.code) {
+            const closedUpdate = await prisma.grant.updateMany({
+              where: {
+                sourceId: source.id,
+                code: grant.code,
+                status: { in: ['OPEN', 'FORTHCOMING'] },
+              },
+              data: {
+                status: 'CLOSED',
+                updatedAt: new Date(),
+              },
+            })
+            grantsUpdated += closedUpdate.count
+          }
+          continue
+        }
 
         const sourceUrl = grant.detailUrl
           ? `https://kap.gov.hu${grant.detailUrl}`
@@ -195,14 +246,15 @@ export async function scrapeKap() {
           fundingType: mapFundingType(grant.supportForm),
           deadline: grant.endDate || undefined,
           openDate: grant.startDate || undefined,
-          minAmountHuf: parseAmount(grant.minAmount),
-          maxAmountHuf: parseAmount(grant.maxAmount),
+          minAmountHuf: parseKapAmountHuf(grant.minAmount),
+          maxAmountHuf: parseKapAmountHuf(grant.maxAmount),
           supportIntensityPct: null,
           eligibleSizes: ['MICRO', 'SMALL', 'MEDIUM'],
           eligibleSectors: ['Mezőgazdaság', 'Agrár', 'Vidékfejlesztés', 'Élelmiszeripar'],
-          description: `${grant.title}. Támogatási forma: ${grant.supportForm || 'VNT'}. Program: KAP.`,
+          description: `${grant.title}. Támogatási forma: ${grant.supportForm || 'VNT'}. Program: KAP Stratégiai Terv.${grant.startDate && grant.endDate ? ` Beadási időszak: ${grant.startDate} – ${grant.endDate}.` : ''}`,
           documentUrls: [],
           sourceUrl,
+          externalId: grant.code || sourceUrl,
         })
 
         grantsCreated++
@@ -213,14 +265,24 @@ export async function scrapeKap() {
     }
 
     const durationMs = Date.now() - startTime
-    await logCrawlRun(source.id, 'SUCCESS', { grantsFound, grantsCreated, grantsUpdated: 0, durationMs })
-    console.log(`[KAP] Done. Found: ${grantsFound}, Active: ${grantsCreated}. ${durationMs}ms`)
-    return { success: true, grantsFound, grantsCreated }
-
+    await logCrawlRun(source.id, 'SUCCESS', {
+      grantsFound,
+      grantsCreated,
+      grantsUpdated,
+      durationMs,
+    })
+    console.log(`[KAP] Done. Found: ${grantsFound}, Active: ${grantsCreated}, Closed-updated: ${grantsUpdated}. ${durationMs}ms`)
+    return { success: true, grantsFound, grantsCreated, grantsUpdated }
   } catch (error) {
     const durationMs = Date.now() - startTime
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    await logCrawlRun(source.id, 'FAILED', { grantsFound, grantsCreated, grantsUpdated: 0, durationMs, errorMessage })
+    await logCrawlRun(source.id, 'FAILED', {
+      grantsFound,
+      grantsCreated,
+      grantsUpdated,
+      durationMs,
+      errorMessage,
+    })
     console.error('[KAP] Fatal error:', error)
     return { success: false, error: errorMessage }
   }

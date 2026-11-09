@@ -37,7 +37,7 @@ export async function deepScrapeGrants(limit = 5): Promise<{
     const label = grant.code || (grant.titleHu || '').slice(0, 30)
 
     // Skip generic homepages
-    if (!url || ['https://kap.gov.hu', 'https://nffku.hu', 'https://magyarfaluprogram.hu'].includes(url)) {
+    if (!url || ['https://kap.gov.hu', 'https://nffku.hu', 'https://neuzrt.hu', 'https://magyarfaluprogram.hu'].includes(url)) {
       await prisma.grant.update({ where: { id: grant.id }, data: { detailScrapedAt: new Date() } })
       skipped++
       continue
