@@ -61,7 +61,7 @@ export async function runGenericScraper(config: ScraperConfig) {
   const startTime = Date.now()
   let grantsFound = 0
   let grantsCreated = 0
-  let grantsUpdated = 0
+  const grantsUpdated = 0
 
   const source = await prisma.source.upsert({
     where: { slug: config.slug },

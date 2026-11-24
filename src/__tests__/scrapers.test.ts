@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseGrantCard, parseKapAmountHuf } from '@/lib/scrapers/kap'
 import { mapEuStatus, buildEuTopicUrl } from '@/lib/scrapers/eu-portal'
+import { mapPalyazatStatus } from '@/lib/scrapers/palyazat-gov-hu'
 import { htmlToMarkdown } from '@/lib/firecrawl'
 
 describe('Scrapers parsing & normalization', () => {
@@ -81,5 +82,33 @@ describe('Scrapers parsing & normalization', () => {
     expect(md).not.toContain('Footer text')
     expect(md).toContain('# Aktuális felhívások')
     expect(md).toContain('[GINOP Plusz 1.2.4](/palyazat/ginop-1)')
+  })
+
+  it('maps FairApp tender statuses including Felfüggesztve and expired endTime to CLOSED', () => {
+    const now = new Date('2026-11-24T00:00:00Z')
+    expect(
+      mapPalyazatStatus(
+        { status: 'Felfüggesztve', startTime: '2026-08-31', endTime: '2026-10-26' },
+        now,
+      ),
+    ).toBe('CLOSED')
+    expect(
+      mapPalyazatStatus(
+        { status: 'Aktív', startTime: '2026-01-01', endTime: '2026-10-01' },
+        now,
+      ),
+    ).toBe('CLOSED')
+    expect(
+      mapPalyazatStatus(
+        { status: 'Tervezett', startTime: '2026-12-01', endTime: '2027-06-01' },
+        now,
+      ),
+    ).toBe('FORTHCOMING')
+    expect(
+      mapPalyazatStatus(
+        { status: 'Aktív', startTime: '2026-01-01', endTime: '2027-06-01' },
+        now,
+      ),
+    ).toBe('OPEN')
   })
 })

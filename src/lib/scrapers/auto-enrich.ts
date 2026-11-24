@@ -100,24 +100,39 @@ export async function autoEnrich(limit = 20): Promise<{ processed: number; enric
 }
 
 /**
- * Auto-archive grants past their deadline.
- * Marks OPEN grants with expired deadlines as ARCHIVED.
+ * Auto-archive grants past their deadline and open forthcoming grants whose openDate has arrived.
  */
 export async function autoArchiveExpired(): Promise<number> {
   const now = new Date()
-  const result = await prisma.grant.updateMany({
-    where: {
-      status: 'OPEN',
-      deadline: { lt: now },
-    },
-    data: {
-      status: 'ARCHIVED',
-      updatedAt: now,
-    },
-  })
+  const [closedRes, openedRes] = await Promise.all([
+    prisma.grant.updateMany({
+      where: {
+        status: 'OPEN',
+        deadline: { lt: now },
+      },
+      data: {
+        status: 'CLOSED',
+        updatedAt: now,
+      },
+    }),
+    prisma.grant.updateMany({
+      where: {
+        status: 'FORTHCOMING',
+        openDate: { lte: now },
+        OR: [{ deadline: null }, { deadline: { gte: now } }],
+      },
+      data: {
+        status: 'OPEN',
+        updatedAt: now,
+      },
+    }),
+  ])
 
-  if (result.count > 0) {
-    console.log(`[AutoArchive] Archived ${result.count} expired grants`)
+  if (closedRes.count > 0) {
+    console.log(`[AutoArchive] Marked ${closedRes.count} expired grants as CLOSED`)
   }
-  return result.count
+  if (openedRes.count > 0) {
+    console.log(`[AutoArchive] Promoted ${openedRes.count} forthcoming grants to OPEN`)
+  }
+  return closedRes.count
 }

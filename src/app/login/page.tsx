@@ -37,10 +37,10 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <Link href="/" className="flex items-center gap-2.5 no-underline mb-12">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'var(--gr-primary)' }}>
-              <Radar className="w-5 h-5 text-white" />
+              <Radar className="w-5 h-5" style={{ color: 'var(--gr-on-primary)' }} />
             </div>
-            <span className="text-lg font-bold" style={{ color: 'var(--gr-text-primary)' }}>
-              Grant<span style={{ color: 'var(--gr-primary-light)' }}>Radar</span>
+            <span className="text-lg font-bold" style={{ color: 'var(--gr-text)' }}>
+              Grant<span style={{ color: 'var(--gr-primary)' }}>Radar</span>
             </span>
           </Link>
 

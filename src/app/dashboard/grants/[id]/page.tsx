@@ -24,6 +24,7 @@ import {
   formatHuf,
   formatDate,
   formatRelativeDate,
+  getEffectiveStatus,
   getStatusLabel,
   getStatusColor,
   getFundingTypeLabel,
@@ -84,6 +85,11 @@ export default async function GrantDetailPage({ params }: { params: Promise<{ id
   const savedRecord = dbUser?.savedGrants?.[0]
   const savedState = parseSavedGrantState(savedRecord?.notes)
 
+  const now = new Date()
+  const effectiveStatus = getEffectiveStatus(grant, now)
+  const isClosingSoon =
+    Boolean(grant.deadline) &&
+    new Date(grant.deadline!).getTime() < now.getTime() + 14 * 24 * 60 * 60 * 1000
   const evaluation = evaluateGrantEligibility(grant, companyProfile)
   const { programProfile } = evaluation
   const difficulty = getDifficultyInfo(grant.aiDifficultyScore)
@@ -124,13 +130,13 @@ export default async function GrantDetailPage({ params }: { params: Promise<{ id
         <div className="flex flex-wrap items-center gap-2 mb-3">
           {grant.code && (
             <span
-              className="mono text-xs px-2.5 py-1 rounded"
-              style={{ background: 'var(--gr-bg-surface)', color: 'var(--gr-gold)' }}
+              className="mono text-xs px-2.5 py-1 rounded font-semibold"
+              style={{ background: 'var(--gr-bg-surface)', color: 'var(--gr-text)' }}
             >
               {grant.code}
             </span>
           )}
-          <span className={`pill ${getStatusColor(grant.status)}`}>{getStatusLabel(grant.status)}</span>
+          <span className={`pill ${getStatusColor(effectiveStatus)}`}>{getStatusLabel(effectiveStatus)}</span>
           <span className={`pill ${getFundingTypeColor(grant.fundingType)}`}>
             {getFundingTypeLabel(grant.fundingType)}
           </span>
@@ -142,6 +148,18 @@ export default async function GrantDetailPage({ params }: { params: Promise<{ id
           )}
         </div>
 
+        {effectiveStatus === 'CLOSED' && (
+          <div
+            className="card p-3.5 mb-4 flex items-center gap-2.5 text-sm font-medium"
+            style={{ background: 'var(--gr-red-bg)', borderColor: 'var(--gr-red)', color: 'var(--gr-red)' }}
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>
+              Ez a pályázati felhívás jelenleg lezárult vagy felfüggesztett státuszú — pályázat jelenleg nem nyújtható be rá.
+            </span>
+          </div>
+        )}
+
         <h1 className="text-2xl font-bold mb-2">{grant.titleHu || grant.titleEn || 'N/A'}</h1>
         <p className="text-sm" style={{ color: 'var(--gr-text-2)' }}>
           Program: <strong style={{ color: 'var(--gr-text)' }}>{grant.program || programProfile.name}</strong>
@@ -150,17 +168,14 @@ export default async function GrantDetailPage({ params }: { params: Promise<{ id
       </div>
 
       {/* Key Info Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           {
             icon: Calendar,
             label: 'Határidő',
             value: grant.deadline ? formatDate(grant.deadline) : 'Folyamatos / N/A',
             sub: grant.deadline ? formatRelativeDate(grant.deadline) : undefined,
-            color:
-              grant.deadline && new Date(grant.deadline) < new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-                ? 'var(--gr-red)'
-                : 'var(--gr-text)',
+            color: isClosingSoon ? 'var(--gr-red)' : 'var(--gr-text)',
           },
           {
             icon: Euro,
@@ -192,18 +207,18 @@ export default async function GrantDetailPage({ params }: { params: Promise<{ id
             color: 'var(--gr-text)',
           },
         ].map((card) => (
-          <div key={card.label} className="stat-card">
+          <div key={card.label} className="stat-card min-w-0">
             <div className="flex items-center gap-2 mb-2">
-              <card.icon className="w-4 h-4" style={{ color: 'var(--gr-text-3)' }} />
+              <card.icon className="w-4 h-4 shrink-0" style={{ color: 'var(--gr-text-3)' }} />
               <span className="text-xs font-medium" style={{ color: 'var(--gr-text-2)' }}>
                 {card.label}
               </span>
             </div>
-            <div className="text-sm font-semibold" style={{ color: card.color }}>
+            <div className="text-sm font-semibold break-words" style={{ color: card.color }}>
               {card.value}
             </div>
             {card.sub && (
-              <div className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--gr-text-2)' }}>
+              <div className="text-xs mt-1 line-clamp-2 break-words" style={{ color: 'var(--gr-text-2)' }}>
                 {card.sub}
               </div>
             )}

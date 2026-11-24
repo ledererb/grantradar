@@ -14,21 +14,28 @@ export default async function AlertsPage() {
 
   if (!alertsEnabled || !dbUser) {
     return (
-      <div className="p-8 max-w-4xl">
+      <div className="p-6 md:p-8 max-w-4xl">
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight mb-1">Értesítések</h1>
           <p className="text-sm" style={{ color: 'var(--gr-text-2)' }}>
-            Cégprofilra szabott pályázati riasztások és határidő-figyelmeztetések
+            Cégprofilra szabott e-mail riasztások és határidő-figyelmeztetések
           </p>
         </div>
 
-        <div className="card p-12 text-center" style={{ borderColor: 'var(--gr-gold-dim)' }}>
-          <Lock className="w-8 h-8 mx-auto mb-4" style={{ color: 'var(--gr-gold)' }} />
-          <h3 className="font-semibold mb-2">Az értesítések PRO csomagot igényelnek</h3>
-          <p className="text-sm mb-6" style={{ color: 'var(--gr-text-2)', maxWidth: '420px', margin: '0 auto' }}>
-            Az automatikus cégprofil-illesztés, a határidő-figyelmeztetések és az előszűrt riasztások a PRO csomag részei.
-          </p>
-          <UpgradeButton plan="PRO" label="Váltás PRO csomagra (€29/hó)" />
+        <div className="card p-10 text-center space-y-5" style={{ borderColor: 'var(--gr-primary)' }}>
+          <Lock className="w-8 h-8 mx-auto" style={{ color: 'var(--gr-primary)' }} />
+          <div>
+            <h3 className="font-bold text-lg mb-2">Az automatikus e-mail értesítések PRO csomaggal érhetők el</h3>
+            <p className="text-sm max-w-lg mx-auto leading-relaxed" style={{ color: 'var(--gr-text-2)' }}>
+              A vállalkozásodra szűrt aktív pályázatokat az Ingyenes csomagban is azonnal megtekintheted a Pályázatok menüben. A PRO csomaggal napi vagy heti e-mail riasztást is kapsz az új lehetőségekről és a lejáró határidőkről.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link href="/dashboard/grants?forMe=1" className="btn-secondary text-xs py-2.5 px-4">
+              Cégemre szabott pályázatok megtekintése
+            </Link>
+            <UpgradeButton plan="PRO" label="Váltás PRO csomagra (11 900 Ft + ÁFA / hó)" />
+          </div>
         </div>
       </div>
     )
@@ -53,7 +60,8 @@ export default async function AlertsPage() {
   ])
 
   const companyProfile = parseUserProfile(rawProfile)
-  const now = Date.now()
+  const nowDate = new Date()
+  const now = nowDate.getTime()
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
 
   // 1. Approaching deadlines on saved grants (closing within 30 days)

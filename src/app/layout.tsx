@@ -9,21 +9,20 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "GrantRadar — Magyar és EU Pályázatfigyelő",
+    default: "GrantRadar — Pályázati Támogatásfigyelő Vállalkozásoknak",
     template: "%s | GrantRadar",
   },
   description:
-    "Fedezze fel a legfrissebb magyar és európai pályázatokat KKV-k számára. AI-alapú elemzések, szemantikus keresés, automatikus értesítések.",
+    "Találd meg a vállalkozásod számára elérhető magyar és uniós pályázatokat egyetlen átlátható felületen. Gyors előszűrés, jogosultsági elemzés és határidő-értesítések.",
   keywords: [
     "pályázat",
-    "KKV",
-    "GINOP",
-    "EU pályázat",
-    "Széchenyi Terv",
+    "KKV támogatás",
+    "GINOP Plusz",
+    "DIMOP Plusz",
+    "KAP",
+    "Széchenyi Terv Plusz",
     "pályázatfigyelő",
-    "grant",
-    "SME funding",
-    "Horizon Europe",
+    "vállalkozói támogatás",
   ],
   authors: [{ name: "GrantRadar" }],
   openGraph: {
@@ -31,9 +30,9 @@ export const metadata: Metadata = {
     locale: "hu_HU",
     url: "https://grantradar.hu",
     siteName: "GrantRadar",
-    title: "GrantRadar — Magyar és EU Pályázatfigyelő",
+    title: "GrantRadar — Pályázati Támogatásfigyelő Vállalkozásoknak",
     description:
-      "AI-alapú pályázatfigyelő platform KKV-k számára. Naponta frissülő adatbázis, szemantikus keresés, személyre szabott értesítések.",
+      "Találd meg a vállalkozásod számára elérhető támogatásokat egyszerűen, egyetlen felületen.",
   },
   robots: {
     index: true,
@@ -47,7 +46,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="hu" className="dark">
+    <html lang="hu" suppressHydrationWarning>
+      <head>
+        <meta name="color-scheme" content="light" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var s=localStorage.getItem('color-scheme');var m=document.querySelector('meta[name=\"color-scheme\"]');if(m&&(s==='dark'||s==='light'||s==='light dark'))m.content=s;}catch(e){}",
+          }}
+        />
+      </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         {children}
       </body>

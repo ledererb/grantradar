@@ -1,5 +1,6 @@
 import https from 'node:https'
 import { prisma } from '@/lib/db'
+import { isTechnicalGrantCall } from '@/lib/utils'
 import { upsertGrant, logCrawlRun } from './shared'
 
 /**
@@ -96,15 +97,16 @@ interface PalyazatTender {
 }
 
 /**
- * Fetch active tenders directly from the official FairApp JSON API (`ginapp-api.fair.gov.hu`).
+ * Fetch active tenders plus recent (2025+) planned / recently closed tenders
+ * directly from the official FairApp JSON API (`ginapp-api.fair.gov.hu`).
  */
 async function fetchViaDirectApi(): Promise<PalyazatTender[]> {
-  const all: PalyazatTender[] = []
+  const byKey = new Map<string, PalyazatTender>()
   const pageSize = 100
   let pageIndex = 0
   let totalCount = Infinity
 
-  while (all.length < totalCount && pageIndex < 20) {
+  while (byKey.size < totalCount && pageIndex < 20) {
     const resp = await govFetchText(`${FAIR_API_BASE}/papi/tenders/list`, {
       method: 'POST',
       headers: {
@@ -133,11 +135,50 @@ async function fetchViaDirectApi(): Promise<PalyazatTender[]> {
     totalCount = data.pagination?.totalCount ?? tenders.length
     if (tenders.length === 0) break
 
-    all.push(...tenders)
+    for (const t of tenders) {
+      byKey.set(t.code || t.id, t)
+    }
     pageIndex++
   }
 
-  return all
+  // Also fetch latest 200 tenders across all statuses (Planned / Suspended / Closed)
+  // so recent calls like DIMOP_PLUSZ-1.2.6/C-26 or forthcoming calls are searchable.
+  const cutoffMs = Date.UTC(2025, 0, 1)
+  for (let recentPage = 0; recentPage < 2; recentPage++) {
+    try {
+      const resp = await govFetchText(`${FAIR_API_BASE}/papi/tenders/list`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'application-name': 'FairApp',
+          'device-id': '40b0c32c-77fe-4380-9f5e-be96ae24fabd',
+        },
+        body: JSON.stringify({
+          filtering: { exactFilters: [] },
+          pagination: { pageIndex: recentPage, pageSize: 100 },
+          sort: { direction: 'desc', field: 'startTime' },
+        }),
+      })
+      if (!resp.ok) break
+      const data = JSON.parse(resp.text) as { tenders?: PalyazatTender[] }
+      const tenders = data.tenders || []
+      if (tenders.length === 0) break
+
+      for (const t of tenders) {
+        const key = t.code || t.id
+        if (byKey.has(key)) continue
+        const startMs = t.startTime ? Date.parse(t.startTime) : 0
+        const modMs = t.modificationTime ? Date.parse(t.modificationTime) : 0
+        if (startMs >= cutoffMs || modMs >= cutoffMs) {
+          byKey.set(key, t)
+        }
+      }
+    } catch {
+      break
+    }
+  }
+
+  return Array.from(byKey.values())
 }
 
 /**
@@ -228,25 +269,58 @@ function mapFundingType(form: string): string {
 }
 
 /**
- * Check if a tender is relevant for businesses or agricultural enterprises (SMB & Agri filter).
+ * Map FairApp tender status + dates to GrantStatus ('OPEN' | 'FORTHCOMING' | 'CLOSED').
+ */
+export function mapPalyazatStatus(
+  tender: Pick<PalyazatTender, 'status' | 'startTime' | 'endTime'>,
+  now = new Date(),
+): 'OPEN' | 'FORTHCOMING' | 'CLOSED' {
+  const raw = (tender.status || '').toLowerCase()
+  if (raw.includes('lezár') || raw.includes('felfüggeszt') || raw.includes('closed')) {
+    return 'CLOSED'
+  }
+  if (tender.endTime) {
+    const end = new Date(tender.endTime)
+    if (!Number.isNaN(end.getTime()) && end.getTime() < now.getTime()) {
+      return 'CLOSED'
+    }
+  }
+  if (raw.includes('tervez') || raw.includes('előkész') || raw.includes('társadalmi')) {
+    return 'FORTHCOMING'
+  }
+  if (tender.startTime) {
+    const start = new Date(tender.startTime)
+    if (!Number.isNaN(start.getTime()) && start.getTime() > now.getTime()) {
+      return 'FORTHCOMING'
+    }
+  }
+  return 'OPEN'
+}
+
+/**
+ * Check if a tender is relevant for businesses, agricultural enterprises, or municipalities.
  */
 function isBusinessRelevant(tender: PalyazatTender): boolean {
+  if (isTechnicalGrantCall(tender.name, tender.code)) return false
   const allCats = [...(tender.beneficiaries || []), ...(tender.categories || [])].map((s) => s.toLowerCase())
   if (allCats.length === 0) return true
 
-  const businessTerms = [
+  const relevantTerms = [
     'vállalkozás',
     'kkv',
     'mikro',
     'kis- és közepes',
+    'kisvállalkozás',
+    'középvállalkozás',
     'gazdasági társaság',
     'egyéni vállalkozó',
     'őstermelő',
     'mezőgazdasági',
     'szövetkezet',
     'termelő',
+    'önkormányzat',
   ]
-  return allCats.some((cat) => businessTerms.some((term) => cat.includes(term)))
+  return allCats.some((cat) => relevantTerms.some((term) => cat.includes(term)))
 }
 
 /**
@@ -312,7 +386,7 @@ function extractRegions(tender: PalyazatTender): string[] {
  */
 function extractSectors(tender: PalyazatTender): string[] {
   const sectors: string[] = []
-  const cats = (tender.categories || []).map((c) => c.toLowerCase())
+  const cats = [...(tender.categories || []), ...(tender.beneficiaries || [])].map((c) => c.toLowerCase())
 
   const sectorMap: Record<string, string> = {
     energia: 'Energia',
@@ -330,6 +404,7 @@ function extractSectors(tender: PalyazatTender): string[] {
     foglalkoztatás: 'Foglalkoztatás',
     képzés: 'Képzés',
     vállalkozás: 'Vállalkozásfejlesztés',
+    önkormányzat: 'Önkormányzat',
   }
 
   for (const cat of cats) {
@@ -437,7 +512,7 @@ export async function scrapePalyazatGovHu() {
           title: tender.name,
           code: tender.code,
           program: tender.operationalProgram || tender.developmentalProgram || undefined,
-          status: 'OPEN',
+          status: mapPalyazatStatus(tender),
           fundingType: mapFundingType(tender.formOfSupport),
           deadline: tender.endTime?.slice(0, 10) || null,
           openDate: tender.startTime?.slice(0, 10) || null,

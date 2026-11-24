@@ -3,10 +3,10 @@ import { createServerClient } from '@supabase/ssr'
 import { type NextRequest, NextResponse } from 'next/server'
 
 // Public API routes that must never require authentication
-const PUBLIC_API_ROUTES = ['/api/stripe/webhook', '/api/cron']
+const PUBLIC_API_ROUTES = ['/api/stripe/webhook', '/api/cron', '/api/alerts/unsubscribe']
 
 // Public page routes
-const PUBLIC_PAGES = ['/', '/pricing', '/grants', '/login', '/register', '/privacy', '/terms', '/adatkezeles', '/impresszum']
+const PUBLIC_PAGES = ['/', '/pricing', '/grants', '/login', '/register', '/privacy', '/terms', '/adatkezeles', '/impresszum', '/leiratkozas']
 
 function isPublicApiRoute(pathname: string) {
   return PUBLIC_API_ROUTES.some(
@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
 
     // Protected API routes: require a session
     // We instantiate a Supabase client with cookie forwarding so getUser() works
-    let supabaseResponse = NextResponse.next({ request })
+    const supabaseResponse = NextResponse.next({ request })
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

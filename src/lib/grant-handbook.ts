@@ -5,6 +5,7 @@ import { formatHuf } from './utils'
 export type LegalForm = 'KFT_ZRT' | 'EV' | 'OSTERMELO' | 'SZOVETKEZET' | 'EGYEB' | ''
 export type TriState = 'YES' | 'NO' | 'UNKNOWN'
 export type LocationRight = 'OWNED' | 'RENTED' | 'PLANNED' | 'UNKNOWN'
+export type AlertFrequency = 'DAILY' | 'WEEKLY' | 'OFF'
 
 export interface CompanyPreScreenProfile {
   companyName: string
@@ -27,6 +28,7 @@ export interface CompanyPreScreenProfile {
   steValue: number | null
   agriRevenuePct: number | null
   hasUnifiedApplication: TriState
+  alertFrequency?: AlertFrequency
 }
 
 export const DEFAULT_PRE_SCREEN_PROFILE: CompanyPreScreenProfile = {
@@ -49,6 +51,7 @@ export const DEFAULT_PRE_SCREEN_PROFILE: CompanyPreScreenProfile = {
   steValue: null,
   agriRevenuePct: null,
   hasUnifiedApplication: 'UNKNOWN',
+  alertFrequency: 'DAILY',
 }
 
 const META_PREFIX = 'meta:'
@@ -80,6 +83,9 @@ export function serializeRegionPrefsWithMeta(profile: Partial<CompanyPreScreenPr
   addMeta('steValue', profile.steValue)
   addMeta('agriRevenuePct', profile.agriRevenuePct)
   addMeta('hasUnifiedApplication', profile.hasUnifiedApplication)
+  if (profile.alertFrequency && profile.alertFrequency !== 'DAILY') {
+    addMeta('alertFrequency', profile.alertFrequency)
+  }
 
   return [...cleanRegions, ...metaEntries]
 }
@@ -128,6 +134,9 @@ export function parseUserProfile(raw: {
   const parseLegal = (v?: string): LegalForm =>
     v === 'KFT_ZRT' || v === 'EV' || v === 'OSTERMELO' || v === 'SZOVETKEZET' || v === 'EGYEB' ? v : ''
 
+  const parseAlertFreq = (v?: string): AlertFrequency =>
+    v === 'WEEKLY' || v === 'OFF' ? v : 'DAILY'
+
   return {
     companyName: raw.companyName || '',
     taxNumber: raw.taxNumber || '',
@@ -148,6 +157,7 @@ export function parseUserProfile(raw: {
     steValue: parseNum(meta.steValue),
     agriRevenuePct: parseNum(meta.agriRevenuePct),
     hasUnifiedApplication: parseTri(meta.hasUnifiedApplication),
+    alertFrequency: parseAlertFreq(meta.alertFrequency),
   }
 }
 
@@ -220,10 +230,10 @@ export function classifyGrantProgram(grant: {
       name: 'KAP (Közös Agrárpolitika)',
       focus: 'Mezőgazdaság, élelmiszeripar, vidéki beruházás',
       typicalApplicant: 'Mezőgazdasági termelő, őstermelő, ŐCSG, EV, agrár gazdasági társaság vagy szövetkezet',
-      keyEligibilityData: 'KNYR-regisztráció, STÉ üzemméret, Egységes Kérelem (EK), mezőgazdasági árbevétel aránya, MePAR/ENAR/TIR',
+      keyEligibilityData: 'Agrár-nyilvántartási szám (KNYR), üzemméret (STÉ), Egységes Kérelem (EK), mezőgazdasági árbevétel aránya',
       typicalCosts: 'Mezőgazdasági gép, technológia, állattartó telep, építés, ültetvény, erőgép',
-      keyRisk: 'STÉ üzemméret, mezőgazdasági árbevétel arány, agrár-nyilvántartások és a 12 hónapon belüli >10%-os elszámolási kötelezettség',
-      financingModel: 'Jellemzően vissza nem térítendő támogatás (VNT), célterülettől függő (akár 50–85%) intenzitással',
+      keyRisk: 'Üzemméret-határok (STÉ), mezőgazdasági árbevétel arány, agrár-nyilvántartások és a 12 hónapon belüli >10%-os elszámolási kötelezettség',
+      financingModel: 'Jellemzően vissza nem térítendő támogatás, célterülettől függő (akár 50–85%) intenzitással',
       specificRules: [
         'Kedvezményezetti Nyilvántartási Rendszer (KNYR) regisztráció alapfeltétel.',
         'Sok beruházási felhívás minimum/maximum üzemméretet ír elő Standard Termelési Érték (STÉ) alapján.',
@@ -291,16 +301,33 @@ export function classifyGrantProgram(grant: {
   if (haystack.includes('nkfi') || haystack.includes('k+f') || haystack.includes('eic') || haystack.includes('eureka') || haystack.includes('horizon')) {
     return {
       family: 'NKFIH_RDI',
-      name: 'K+F+I és Innovációs Pályázat (NKFIH / Horizon / EIC)',
+      name: 'K+F+I és Innovációs Pályázat (NKFIH / EU innováció)',
       focus: 'Ipari kutatás, kísérleti fejlesztés, prototípus-fejlesztés és piacra vitel',
-      typicalApplicant: 'Innovatív KKV-k, startupok, kutatóhelyekkel konzorciumban induló vállalkozások',
-      keyEligibilityData: 'K+F tartalom (újdonságtartalom, TRL szint), szakmai csapat, lezárt üzleti év, saját forrás',
+      typicalApplicant: 'Innovatív KKV-k, induló technológiai cégek, kutatóhelyekkel közösen induló vállalkozások',
+      keyEligibilityData: 'Újdonságtartalom és fejlesztési készültség (ötlettől a kész termékig), szakmai csapat, lezárt üzleti év, saját forrás',
       typicalCosts: 'Kutató-fejlesztő bérköltség, K+F eszközök, igénybe vett K+F szolgáltatás, szabadalom/oltalom, piaci bevezetés',
       keyRisk: 'Valódi K+F újdonságtartalom igazolása (NKFIH szakértői vélemény / minősítés) és a munkaidő-nyilvántartás',
       financingModel: 'Vissza nem térítendő támogatás (tevékenységtípus szerint differenciált intenzitással)',
       specificRules: [
-        'Az ipari kutatás és kísérleti fejlesztés eltérő támogatási intenzitással számolható el (K+F+I állami támogatási jogcím).',
-        'A személyi jellegű ráfordításoknál szigorú munkaidő-kimutatás (timesheet) és munkaköri leírás szükséges.',
+        'Az ipari kutatás és a kísérleti fejlesztés eltérő támogatási aránnyal számolható el.',
+        'A személyi jellegű ráfordításoknál szigorú munkaidő-kimutatás és munkaköri leírás szükséges.',
+      ],
+    }
+  }
+
+  if (haystack.includes('önkormányzat') || haystack.includes('települési')) {
+    return {
+      family: 'GENERAL_HU_EU',
+      name: 'Önkormányzati és Településfejlesztési Konstrukció',
+      focus: 'Önkormányzati tulajdonú épületek, utak, közszolgáltatások és települési infrastruktúra fejlesztése',
+      typicalApplicant: 'Helyi önkormányzatok, önkormányzati társulások és közfeladatot ellátó intézmények (vállalkozások jellemzően nem jogosultak)',
+      keyEligibilityData: 'Önkormányzati jogállás, testületi határozat, települési fejlesztési dokumentáció',
+      typicalCosts: 'Önkormányzati ingatlan felújítás, út- és járdafejlesztés, vízelvezetés, közszolgáltatási eszközök',
+      keyRisk: 'Vállalkozások és egyéni vállalkozók az önkormányzati alprogramokban általában nem pályázhatnak',
+      financingModel: 'Vissza nem térítendő támogatás (akár 100%-os intenzitással)',
+      specificRules: [
+        'Kizárólag vagy elsősorban helyi önkormányzatok, illetve önkormányzati társulások részére nyitott konstrukció.',
+        'Gazdasági társaságok (Kft., Bt., EV) csak akkor vehetnek részt, ha a felhívás kifejezetten megengedi a vállalkozói konzorciumot.',
       ],
     }
   }
@@ -520,6 +547,8 @@ export function evaluateGrantEligibility(
     code?: string | null
     program?: string | null
     titleHu?: string | null
+    status?: string | null
+    deadline?: Date | string | null
     fundingType?: string | null
     minAmountHuf?: bigint | number | string | null
     maxAmountHuf?: bigint | number | string | null
@@ -566,11 +595,22 @@ export function evaluateGrantEligibility(
     EGYEB: 'Egyéb szervezet',
   }
 
+  const titleLower = (grant.titleHu || '').toLowerCase()
+  const isMunicipalOnlyGrant =
+    (titleLower.includes('önkormányzat') || titleLower.includes('települési')) &&
+    !eligText.includes('vállalkozás') &&
+    !eligText.includes('kkv') &&
+    !titleLower.includes('kkv') &&
+    !titleLower.includes('vállalkozás')
+
   let sizeStatus: CheckStatus = 'CHECK'
   let sizeNote = 'Állítsd be a cégméretet és a szervezeti formát a Beállításokban.'
   if (p.companySizePref.length > 0 || p.legalForm) {
     const matchesSize = p.companySizePref.length === 0 || p.companySizePref.some(s => allowedSizes.includes(s))
-    if (programProfile.family === 'KAP' && p.legalForm && !p.isAgriProducer && p.legalForm !== 'OSTERMELO') {
+    if (isMunicipalOnlyGrant && p.legalForm && p.legalForm !== 'EGYEB') {
+      sizeStatus = 'FAIL'
+      sizeNote = 'Ez a felhívás önkormányzatoknak / települési közszolgáltatásoknak szól; gazdasági társaság vagy egyéni vállalkozó jellemzően nem pályázhat.'
+    } else if (programProfile.family === 'KAP' && p.legalForm && !p.isAgriProducer && p.legalForm !== 'OSTERMELO') {
       sizeStatus = 'WARN'
       sizeNote = 'KAP pályázatoknál mezőgazdasági termelői státusz vagy élelmiszeripari jogosultság szükséges.'
     } else if (!matchesSize) {
@@ -712,12 +752,15 @@ export function evaluateGrantEligibility(
 
   // 6. Projekt helyszíne és területi hatály + használati jog
   const isBudapestOnlyProfile = p.regions.length > 0 &&
-    p.regions.every(r => r.toLowerCase().includes('budapest') || r.toLowerCase().includes('pest'))
+    p.regions.every(r => {
+      const lower = r.toLowerCase()
+      return lower.includes('budapest') || lower.includes('pest') || lower.includes('közép-magyarország')
+    })
   let locStatus: CheckStatus = 'CHECK'
   let locNote = 'A megvalósítási helyszínnek bejegyzett telephelynek kell lennie, érvényes tulajdon- vagy bérleti joggal.'
   if (programProfile.family === 'GINOP_PLUSZ' && isBudapestOnlyProfile) {
     locStatus = 'WARN'
-    locNote = 'Sok GINOP Plusz konstrukció csak a kevésbé fejlett (Budapesten és Pest vármegyén kívüli) régiókban érhető el!'
+    locNote = 'Sok GINOP Plusz konstrukció csak a Budapesten és Pest régión kívüli (vidéki) területeken érhető el!'
   } else if (p.regions.length > 0 && (p.locationRight === 'OWNED' || p.locationRight === 'RENTED')) {
     locStatus = 'PASS'
     locNote = 'Megvalósítási régió és helyszín használati jog megadva.'
@@ -813,11 +856,25 @@ export function evaluateGrantEligibility(
   const failCount = rows.filter(r => r.status === 'FAIL').length
   const checkCount = rows.filter(r => r.status === 'CHECK').length
 
+  const isExpiredOrClosed = (() => {
+    if (grant.status === 'CLOSED' || grant.status === 'ARCHIVED') return true
+    if (grant.deadline) {
+      const d = typeof grant.deadline === 'string' ? new Date(grant.deadline) : grant.deadline
+      if (!Number.isNaN(d.getTime()) && d.getTime() < Date.now()) return true
+    }
+    return false
+  })()
+
   let verdictLabel = 'Előszűrésre vár'
-  let verdictSummary = 'Töltsd ki a 2 perces előszűrő adatokat a Beállításokban, hogy lásd a cégedre szabott jogosultsági mátrixot.'
+  let verdictSummary = 'Töltsd ki a 2 perces előszűrő adatokat a Cégprofil oldalon, hogy lásd a cégedre szabott jogosultsági mátrixot.'
   let verdictTone: EligibilityEvaluation['verdictTone'] = 'muted'
 
-  if (profileConfigured) {
+  if (isExpiredOrClosed) {
+    verdictLabel = 'Lezárult felhívás — jelenleg nem nyújtható be'
+    verdictSummary =
+      'Ez a pályázati felhívás jelenleg lezárult vagy felfüggesztett státuszú. Az alábbi táblázat tájékoztató jelleggel mutatja, hogyan illeszkedne a céged egy esetleges újranyitásnál.'
+    verdictTone = 'muted'
+  } else if (profileConfigured) {
     if (failCount > 0) {
       verdictLabel = `${failCount} kizáró kockázat észlelve`
       verdictSummary = 'A megadott cégadatok alapján kritikus jogosultsági bukópont látható. Ellenőrizd a pirossal jelölt sorokat!'

@@ -32,6 +32,7 @@ export const updateProfileSchema = z.object({
   steValue: z.number().min(0).max(100000000).nullable().optional(),
   agriRevenuePct: z.number().min(0).max(100).nullable().optional(),
   hasUnifiedApplication: z.enum(['YES', 'NO', 'UNKNOWN']).optional(),
+  alertFrequency: z.enum(['DAILY', 'WEEKLY', 'OFF']).optional(),
 })
 
 export const updateSavedGrantChecklistSchema = z.object({

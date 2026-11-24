@@ -1,14 +1,28 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, Loader2, Building2, ShieldCheck, MapPin, Sprout, Euro } from 'lucide-react'
+import Link from 'next/link'
+import {
+  Save,
+  Loader2,
+  Building2,
+  ShieldCheck,
+  MapPin,
+  Sprout,
+  Coins,
+  Bell,
+  ArrowRight,
+  Palette,
+} from 'lucide-react'
 import {
   DEFAULT_PRE_SCREEN_PROFILE,
   type CompanyPreScreenProfile,
   type LegalForm,
   type TriState,
   type LocationRight,
+  type AlertFrequency,
 } from '@/lib/grant-handbook'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 const SECTORS = [
   'IT és szoftverfejlesztés',
@@ -29,7 +43,7 @@ const SECTORS = [
 const REGIONS = [
   'Kevésbé fejlett régió (Észak-Magyarország, Észak-Alföld, Dél-Alföld, Dél-Dunántúl)',
   'Fejlettebb vidéki régió (Közép-Dunántúl, Nyugat-Dunántúl)',
-  'Budapest / Pest vármegye',
+  'Budapest / Pest régió (Közép-Magyarország)',
   '5000 fő alatti település (Magyar Falu / vidéki előny)',
 ]
 
@@ -55,7 +69,6 @@ export default function SettingsPage() {
             return
           }
         }
-        // Fallback: load pre-screening draft from landing page if present
         const rawDraft = localStorage.getItem('grantradar_prescreen_draft')
         if (rawDraft) {
           const draft = JSON.parse(rawDraft)
@@ -92,7 +105,7 @@ export default function SettingsPage() {
         setError(errData.error || 'Nem sikerült menteni a beállításokat.')
       } else {
         setSaved(true)
-        setTimeout(() => setSaved(false), 3000)
+        setTimeout(() => setSaved(false), 5000)
       }
     } catch {
       setError('Hálózati hiba történt.')
@@ -135,29 +148,36 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-8">
-        <span className="pill pill-gold mb-2 inline-flex">2 perces előszűrés</span>
-        <h1 className="text-2xl font-bold tracking-tight mb-1">
-          Cégprofil & Pályázati Előszűrő Beállítások
-        </h1>
-        <p className="text-sm" style={{ color: 'var(--gr-text-2)' }}>
-          Add meg a vállalkozásod alapadatait, hogy minden GINOP Plusz, DIMOP Plusz és KAP pályázatnál automatikusan lásd a jogosultsági mátrixot és a lehetséges bukópontokat.
-        </p>
+    <div className="p-6 md:p-8 max-w-4xl">
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <span className="pill pill-blue mb-2 inline-flex">Személyre szabás</span>
+          <h1 className="text-2xl font-bold tracking-tight mb-1">
+            Cégprofil, Szűrők és Értesítések
+          </h1>
+          <p className="text-sm" style={{ color: 'var(--gr-text-2)' }}>
+            Add meg a vállalkozásod adatait: ez alapján szűrjük a „Cégemre szabott” pályázati listát az Áttekintés és a Pályázatok menüben, valamint az e-mail értesítőket.
+          </p>
+        </div>
+
+        <Link href="/dashboard/grants?forMe=1" className="btn-secondary text-xs py-2 px-3.5 shrink-0">
+          Saját találatok megtekintése
+          <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* 1. Cégadatok és Pályázói kör */}
         <div className="card p-6 space-y-5">
           <div className="flex items-center gap-2">
-            <Building2 className="w-4 h-4" style={{ color: 'var(--gr-gold)' }} />
-            <h2 className="text-sm font-bold">1. Pályázói kör, cégforma és KKV-méret</h2>
+            <Building2 className="w-4 h-4" style={{ color: 'var(--gr-primary)' }} />
+            <h2 className="text-sm font-bold">1. Alapadatok, cégforma és vállalkozási méret</h2>
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-                Cégnév / Név
+                Cégnév / Vállalkozás neve
               </label>
               <input
                 className="input"
@@ -189,7 +209,7 @@ export default function SettingsPage() {
                 <option value="">— Válassz formát —</option>
                 <option value="KFT_ZRT">Gazdasági társaság (Kft. / Zrt. / Bt.)</option>
                 <option value="EV">Egyéni vállalkozó (EV)</option>
-                <option value="OSTERMELO">Mezőgazdasági őstermelő / ŐCSG</option>
+                <option value="OSTERMELO">Mezőgazdasági őstermelő / Családi gazdaság</option>
                 <option value="SZOVETKEZET">Szövetkezet</option>
                 <option value="EGYEB">Egyéb szervezet</option>
               </select>
@@ -198,7 +218,7 @@ export default function SettingsPage() {
 
           <div>
             <label className="block text-xs font-medium mb-2" style={{ color: 'var(--gr-text-2)' }}>
-              KKV-minősítés (kapcsolt és partnervállalkozásokkal együtt)
+              Cégméret (a kapcsolt és partnervállalkozásokkal együtt)
             </label>
             <div className="flex flex-wrap gap-2">
               {[
@@ -210,8 +230,8 @@ export default function SettingsPage() {
                   key={size.value}
                   type="button"
                   onClick={() => toggleSize(size.value)}
-                  className={`pill text-xs cursor-pointer py-1.5 px-3 ${
-                    profile.companySizePref.includes(size.value) ? 'pill-gold' : 'pill-muted'
+                  className={`pill cursor-pointer py-1.5 px-3 ${
+                    profile.companySizePref.includes(size.value) ? 'pill-blue' : 'pill-muted'
                   }`}
                 >
                   {size.label}
@@ -224,9 +244,9 @@ export default function SettingsPage() {
         {/* 2. Működési múlt, Létszám és Pénzügyi alkalmasság */}
         <div className="card p-6 space-y-5">
           <div className="flex items-center gap-2">
-            <Euro className="w-4 h-4" style={{ color: 'var(--gr-gold)' }} />
+            <Coins className="w-4 h-4" style={{ color: 'var(--gr-primary)' }} />
             <h2 className="text-sm font-bold">
-              2. Működési múlt, létszám és pénzügyi mutatók
+              2. Működési múlt, létszám és pénzügyi adatok
             </h2>
           </div>
 
@@ -253,7 +273,7 @@ export default function SettingsPage() {
 
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-                Statisztikai létszám (fő)
+                Alkalmazotti létszám (fő)
               </label>
               <input
                 type="number"
@@ -325,7 +345,7 @@ export default function SettingsPage() {
 
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-                Köztartozásmentes (NAV KOMA) & rendezett?
+                Köztartozásmentes (NAV egyenleg rendben)?
               </label>
               <select
                 className="input"
@@ -336,13 +356,13 @@ export default function SettingsPage() {
               >
                 <option value="UNKNOWN">Nem megadott</option>
                 <option value="YES">Igen, köztartozásmentes</option>
-                <option value="NO">Nem (lejárt tartozás / eljárás)</option>
+                <option value="NO">Nem (lejárt adótartozás)</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-                Felhasznált De minimis keret (3 év, EUR)
+                Korábbi csekély összegű (De minimis) támogatás (EUR)
               </label>
               <input
                 type="number"
@@ -361,9 +381,9 @@ export default function SettingsPage() {
         {/* 3. Projekt helyszíne és használati jog */}
         <div className="card p-6 space-y-5">
           <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4" style={{ color: 'var(--gr-gold)' }} />
+            <MapPin className="w-4 h-4" style={{ color: 'var(--gr-primary)' }} />
             <h2 className="text-sm font-bold">
-              3. Projekt megvalósítási helyszíne és használati jog
+              3. Fejlesztés helyszíne (telephely) és használati jog
             </h2>
           </div>
 
@@ -377,8 +397,8 @@ export default function SettingsPage() {
                   key={region}
                   type="button"
                   onClick={() => toggleRegion(region)}
-                  className={`pill text-xs cursor-pointer py-1.5 px-3 ${
-                    profile.regions.includes(region) ? 'pill-gold' : 'pill-muted'
+                  className={`pill cursor-pointer py-1.5 px-3 ${
+                    profile.regions.includes(region) ? 'pill-blue' : 'pill-muted'
                   }`}
                 >
                   {region}
@@ -389,7 +409,7 @@ export default function SettingsPage() {
 
           <div className="max-w-md">
             <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-              Bejegyzett telephely és használati jog állapota
+              Bejegyzett telephely állapota
             </label>
             <select
               className="input"
@@ -408,15 +428,15 @@ export default function SettingsPage() {
 
         {/* 4. KAP — Mezőgazdasági vállalkozások speciális feltételei */}
         <div className="card p-6 space-y-4">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Sprout className="w-4 h-4" style={{ color: 'var(--gr-green)' }} />
               <div>
                 <h2 className="text-sm font-bold">
-                  4. KAP — Mezőgazdasági és vidéki beruházási adatok
+                  4. Mezőgazdasági és vidéki beruházási adatok (KAP)
                 </h2>
                 <p className="text-xs" style={{ color: 'var(--gr-text-2)' }}>
-                  Kapcsold be, ha mezőgazdasági termelőként, őstermelőként vagy élelmiszeripari szereplőként KAP pályázatokra is szűrnél
+                  Kapcsold be, ha mezőgazdasági termelőként, őstermelőként vagy élelmiszeripari vállalkozásként agrárpályázatokra is szűrnél
                 </p>
               </div>
             </div>
@@ -424,11 +444,11 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => setProfile((p) => ({ ...p, isAgriProducer: !p.isAgriProducer }))}
-              className={`pill text-xs cursor-pointer py-1.5 px-3 ${
+              className={`pill cursor-pointer py-1.5 px-3 ${
                 profile.isAgriProducer ? 'pill-green' : 'pill-muted'
               }`}
             >
-              {profile.isAgriProducer ? '✓ Agrár / KAP aktív' : 'Agrár profil bekapcsolása'}
+              {profile.isAgriProducer ? '✓ Agrár profil aktív' : 'Agrár profil bekapcsolása'}
             </button>
           </div>
 
@@ -436,7 +456,7 @@ export default function SettingsPage() {
             <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 pt-3 border-t" style={{ borderColor: 'var(--gr-border)' }}>
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-                  KNYR regisztráció
+                  Agrár-nyilvántartás (KNYR szám)
                 </label>
                 <select
                   className="input"
@@ -451,7 +471,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-                  Üzemméret (STÉ, EUR)
+                  Gazdasági üzemméret (STÉ, EUR)
                 </label>
                 <input
                   type="number"
@@ -484,7 +504,7 @@ export default function SettingsPage() {
 
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--gr-text-2)' }}>
-                  Egységes Kérelem (EK)
+                  Egységes Kérelem (területalapú támogatás)
                 </label>
                 <select
                   className="input"
@@ -495,7 +515,7 @@ export default function SettingsPage() {
                 >
                   <option value="UNKNOWN">Nem megadott</option>
                   <option value="YES">Beadva / rendelkezésre áll</option>
-                  <option value="NO">Nincs EK</option>
+                  <option value="NO">Nincs beadva</option>
                 </select>
               </div>
             </div>
@@ -505,11 +525,11 @@ export default function SettingsPage() {
         {/* 5. Szektorok */}
         <div className="card p-6">
           <div className="flex items-center gap-2 mb-2">
-            <ShieldCheck className="w-4 h-4" style={{ color: 'var(--gr-gold)' }} />
-            <h2 className="text-sm font-bold">5. Fejlesztendő ágazatok / szektorok</h2>
+            <ShieldCheck className="w-4 h-4" style={{ color: 'var(--gr-primary)' }} />
+            <h2 className="text-sm font-bold">5. Fejlesztendő ágazatok és tevékenységek</h2>
           </div>
-          <p className="text-xs mb-3" style={{ color: 'var(--gr-text-3)' }}>
-            Válassz szektorokat az értesítésekhez és a személyre szabott pályázati ajánlásokhoz
+          <p className="text-xs mb-3" style={{ color: 'var(--gr-text-2)' }}>
+            Jelöld meg a vállalkozásod területeit a pontosabb találatokhoz és értesítésekhez
           </p>
           <div className="flex flex-wrap gap-2">
             {SECTORS.map((sector) => (
@@ -517,8 +537,8 @@ export default function SettingsPage() {
                 key={sector}
                 type="button"
                 onClick={() => toggleSector(sector)}
-                className={`pill text-xs cursor-pointer py-1.5 px-3 ${
-                  profile.sectorPrefs.includes(sector) ? 'pill-gold' : 'pill-muted'
+                className={`pill cursor-pointer py-1.5 px-3 ${
+                  profile.sectorPrefs.includes(sector) ? 'pill-blue' : 'pill-muted'
                 }`}
               >
                 {sector}
@@ -527,21 +547,96 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* 6. E-mail értesítések és leiratkozás */}
+        <div className="card p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4" style={{ color: 'var(--gr-primary)' }} />
+            <h2 className="text-sm font-bold">6. E-mail értesítések, gyakoriság és leiratkozás</h2>
+          </div>
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--gr-text-2)' }}>
+            Személyre szabott hírlevelet csak akkor küldünk (Pro / Agency csomagban), ha új, a cégedre illeszkedő pályázat nyílt, vagy egy mentett pályázatod határideje 14 napon belül lejár. Bármikor leiratkozhatsz itt vagy a levelek alján található linkkel.
+          </p>
+
+          <div className="grid sm:grid-cols-3 gap-2.5">
+            {(
+              [
+                {
+                  value: 'DAILY',
+                  title: 'Napi értesítő',
+                  desc: 'Reggelente csak akkor írunk, ha van új releváns pályázat vagy közeli határidő.',
+                },
+                {
+                  value: 'WEEKLY',
+                  title: 'Heti összefoglaló',
+                  desc: 'Minden hétfő reggel egyetlen áttekintő e-mail a legfontosabb változásokról.',
+                },
+                {
+                  value: 'OFF',
+                  title: 'Leiratkozva (Kikapcsolva)',
+                  desc: 'Nem küldünk e-mail értesítőket; a találatokat bármikor megnézheted a felületen.',
+                },
+              ] as { value: AlertFrequency; title: string; desc: string }[]
+            ).map((opt) => {
+              const active = (profile.alertFrequency || 'DAILY') === opt.value
+              return (
+                <label
+                  key={opt.value}
+                  className="prescreen-option flex-col items-start gap-1 p-3.5"
+                >
+                  <input
+                    type="radio"
+                    name="alertFrequency"
+                    value={opt.value}
+                    checked={active}
+                    onChange={() =>
+                      setProfile((p) => ({ ...p, alertFrequency: opt.value }))
+                    }
+                    className="sr-only"
+                  />
+                  <span className="text-xs font-bold" style={{ color: 'var(--gr-text)' }}>
+                    {opt.title}
+                  </span>
+                  <span className="text-[11px] font-normal leading-snug" style={{ color: 'var(--gr-text-2)' }}>
+                    {opt.desc}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* 7. Megjelenés beállítása */}
+        <div className="card p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <Palette className="w-4 h-4" style={{ color: 'var(--gr-primary)' }} />
+            <h2 className="text-sm font-bold">7. Felület megjelenése (Világos / Sötét mód)</h2>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--gr-text-2)' }}>
+            Alapértelmezésben a könnyen olvasható világos B2B felület aktív, de igény esetén bármikor átválthatsz sötét vagy rendszerkövető nézetre.
+          </p>
+          <ThemeToggle variant="full" />
+        </div>
+
         {/* Save Button */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button type="submit" className="btn-primary py-2.5 px-6" disabled={loading}>
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <>
-                <Save className="w-4 h-4" /> Profil és előszűrő mentése
+                <Save className="w-4 h-4" /> Beállítások mentése
               </>
             )}
           </button>
           {saved && (
-            <span className="text-xs font-semibold" style={{ color: 'var(--gr-green)' }}>
-              ✓ Cégprofil sikeresen mentve! A pályázati adatlapokon frissült a jogosultsági mátrix.
-            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-semibold" style={{ color: 'var(--gr-green)' }}>
+                ✓ Mentve! Frissült a cégedre szabott pályázati lista.
+              </span>
+              <Link href="/dashboard/grants?forMe=1" className="text-xs font-semibold underline" style={{ color: 'var(--gr-primary)' }}>
+                Cégemre szabott pályázatok megtekintése →
+              </Link>
+            </div>
           )}
           {error && (
             <span className="text-xs font-medium" style={{ color: 'var(--gr-red)' }}>

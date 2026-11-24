@@ -71,16 +71,16 @@ export default function RegisterPage() {
         <div className="relative">
           <Link href="/" className="flex items-center gap-2.5 no-underline">
             <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'var(--gr-primary)' }}>
-              <Radar className="w-5 h-5 text-white" />
+              <Radar className="w-5 h-5" style={{ color: 'var(--gr-on-primary)' }} />
             </div>
-            <span className="text-lg font-bold" style={{ color: 'var(--gr-text-primary)' }}>
-              Grant<span style={{ color: 'var(--gr-primary-light)' }}>Radar</span>
+            <span className="text-lg font-bold" style={{ color: 'var(--gr-text)' }}>
+              Grant<span style={{ color: 'var(--gr-primary)' }}>Radar</span>
             </span>
           </Link>
         </div>
         <div className="relative">
           <blockquote className="text-lg font-medium leading-relaxed mb-4" style={{ maxWidth: '380px' }}>
-            "A GrantRadar nélkül lemaradtunk volna a GINOP pályázatról. Most már minden reggel van friss összefoglaló."
+            &ldquo;A GrantRadar nélkül lemaradtunk volna a GINOP pályázatról. Most már minden reggel van friss összefoglaló.&rdquo;
           </blockquote>
           <div className="text-sm font-medium">— Egy elégedett KKV-vezető</div>
           <div className="text-xs" style={{ color: 'var(--gr-text-3)' }}>Budapest</div>
@@ -93,10 +93,10 @@ export default function RegisterPage() {
           <div className="lg:hidden mb-12">
             <Link href="/" className="flex items-center gap-2.5 no-underline">
               <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: 'var(--gr-primary)' }}>
-                <Radar className="w-5 h-5 text-white" />
+                <Radar className="w-5 h-5" style={{ color: 'var(--gr-on-primary)' }} />
               </div>
-              <span className="text-lg font-bold" style={{ color: 'var(--gr-text-primary)' }}>
-                Grant<span style={{ color: 'var(--gr-primary-light)' }}>Radar</span>
+              <span className="text-lg font-bold" style={{ color: 'var(--gr-text)' }}>
+                Grant<span style={{ color: 'var(--gr-primary)' }}>Radar</span>
               </span>
             </Link>
           </div>

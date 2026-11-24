@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Bookmark, CheckSquare, Square, Save, Loader2, Lock, AlertCircle, Download, Printer } from 'lucide-react'
 import { PREPARATION_CHECKLIST_ITEMS, type EligibilityMatrixRow } from '@/lib/grant-handbook'
@@ -28,6 +29,7 @@ export function GrantPrepChecklist({
   isKap,
   isAuthenticated,
 }: GrantPrepChecklistProps) {
+  const router = useRouter()
   const [saved, setSaved] = useState(initialSaved)
   const [checkedDocs, setCheckedDocs] = useState<string[]>(initialCheckedDocs)
   const [notes, setNotes] = useState(initialNotes)
@@ -42,7 +44,7 @@ export function GrantPrepChecklist({
 
   async function handleToggleBookmark() {
     if (!isAuthenticated) {
-      window.location.href = '/login'
+      router.push('/login')
       return
     }
     setSavingBookmark(true)
@@ -72,7 +74,7 @@ export function GrantPrepChecklist({
 
   async function persistChecklist(nextDocs: string[], nextNotes: string) {
     if (!isAuthenticated) {
-      window.location.href = '/login'
+      router.push('/login')
       return
     }
     setSavingChecklist(true)

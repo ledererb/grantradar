@@ -8,7 +8,8 @@ import {
   evaluateGrantEligibility,
   DEFAULT_PRE_SCREEN_PROFILE,
 } from '@/lib/grant-handbook'
-import { buildAlertDigestHtml } from '@/lib/alerts-mailer'
+import { buildAlertDigestHtml, createUnsubscribeToken, verifyUnsubscribeToken } from '@/lib/alerts-mailer'
+import { getEffectiveStatus, normalizeGrantCodeQuery, isTechnicalGrantCall } from '@/lib/utils'
 
 describe('UserProfile pre-screening metadata serialization', () => {
   it('round-trips extended profile fields via regionPrefs', () => {
@@ -156,6 +157,34 @@ describe('evaluateGrantEligibility', () => {
     expect(evaluation.warnCount).toBe(0)
     expect(evaluation.verdictTone).toBe('green')
   })
+
+  it('flags FAIL when an SME profile checks a municipal-only grant', () => {
+    const evaluation = evaluateGrantEligibility(
+      {
+        code: 'MFP/ÖTIFB/2026',
+        titleHu: 'Önkormányzati tulajdonú ingatlanok fejlesztése',
+        status: 'OPEN',
+        eligibleSizes: ['MICRO', 'SMALL'],
+      },
+      {
+        ...DEFAULT_PRE_SCREEN_PROFILE,
+        companySizePref: ['SMALL'],
+        legalForm: 'KFT_ZRT',
+        closedFiscalYears: 2,
+        headcount: 10,
+        annualRevenueM: 120,
+        positiveEquity: 'YES',
+        noTaxDebt: 'YES',
+        regions: ['Kevésbé fejlett régió'],
+        locationRight: 'OWNED',
+        ownContributionPct: 50,
+      },
+    )
+
+    expect(evaluation.programProfile.name).toContain('Önkormányzati')
+    expect(evaluation.failCount).toBeGreaterThan(0)
+    expect(evaluation.verdictTone).toBe('red')
+  })
 })
 
 describe('buildAlertDigestHtml', () => {
@@ -190,5 +219,79 @@ describe('buildAlertDigestHtml', () => {
     expect(html).toContain('Példa Kft.')
     expect(html).toContain('GINOP_PLUSZ-1.2.4-25')
     expect(html).toContain('KAP-RD09a-2-26')
+    expect(html).toContain('Leiratkozás egy kattintással')
+  })
+
+  it('verifies HMAC unsubscribe tokens', () => {
+    const token = createUnsubscribeToken('user_123')
+    expect(verifyUnsubscribeToken('user_123', token)).toBe(true)
+    expect(verifyUnsubscribeToken('user_999', token)).toBe(false)
+  })
+})
+
+describe('Expired grant eligibility & query helpers', () => {
+  it('never marks a closed or expired grant as eligible', () => {
+    const evaluation = evaluateGrantEligibility(
+      {
+        code: 'DIMOP_PLUSZ-1.2.6/C-26',
+        titleHu: 'KKV digitális fejlesztés',
+        status: 'CLOSED',
+        deadline: '2026-10-26',
+        eligibleSizes: ['MICRO', 'SMALL'],
+      },
+      {
+        ...DEFAULT_PRE_SCREEN_PROFILE,
+        companySizePref: ['SMALL'],
+        legalForm: 'KFT_ZRT',
+        closedFiscalYears: 3,
+        headcount: 15,
+        annualRevenueM: 150,
+        positiveEquity: 'YES',
+        noTaxDebt: 'YES',
+        regions: ['Kevésbé fejlett régió'],
+        locationRight: 'OWNED',
+        ownContributionPct: 60,
+      },
+    )
+
+    expect(evaluation.verdictTone).toBe('muted')
+    expect(evaluation.verdictLabel).toContain('Lezárult')
+    expect(evaluation.verdictLabel).not.toContain('Kiváló')
+    expect(evaluation.verdictLabel).not.toContain('Esélyes')
+  })
+
+  it('round-trips alertFrequency when WEEKLY or OFF', () => {
+    const regionPrefs = serializeRegionPrefsWithMeta({
+      ...DEFAULT_PRE_SCREEN_PROFILE,
+      alertFrequency: 'WEEKLY',
+    })
+    expect(regionPrefs).toContain('meta:alertFrequency=WEEKLY')
+    const parsed = parseUserProfile({ regionPrefs })
+    expect(parsed.alertFrequency).toBe('WEEKLY')
+  })
+
+  it('normalizes Hungarian grant code queries and detects effective status & technical calls', () => {
+    const variants = normalizeGrantCodeQuery('DIMOP Plusz-1.2.6/C')
+    expect(variants).toContain('DIMOP_PLUSZ-1.2.6/C')
+
+    expect(
+      getEffectiveStatus({ status: 'OPEN', deadline: '2020-01-01' }, new Date('2026-11-24')),
+    ).toBe('CLOSED')
+    expect(
+      getEffectiveStatus({ status: 'OPEN', openDate: '2027-01-01' }, new Date('2026-11-24')),
+    ).toBe('FORTHCOMING')
+
+    expect(
+      isTechnicalGrantCall(
+        'HVSZ és Közvetítők költségtérítése DIMOP Plusz 1. prioritás',
+        'DIMOP_PLUSZ-1.2.3/AB-2-24',
+      ),
+    ).toBe(true)
+    expect(
+      isTechnicalGrantCall(
+        'KKV-k digitális átállásának támogatása',
+        'DIMOP_PLUSZ-1.2.6/C-26',
+      ),
+    ).toBe(false)
   })
 })
