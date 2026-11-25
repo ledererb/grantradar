@@ -15,11 +15,11 @@ export interface DigestGrantItem {
 }
 
 function getUnsubscribeSecret(): string {
-  return (
+  const raw =
     process.env.CRON_SECRET ||
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     'grantradar-unsubscribe-fallback'
-  )
+  return raw.replace(/\\n$/g, '').trim() || 'grantradar-unsubscribe-fallback'
 }
 
 export function createUnsubscribeToken(userId: string): string {
